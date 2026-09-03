@@ -14,7 +14,7 @@
 // object pointer at +0 where the store keeps it there).
 #pragma once
 
-#include "Config.h"
+#include "plugin/config.h"
 
 #include <cstddef>
 #include <cstdint>

@@ -1,4 +1,4 @@
-#include "Config.h"
+#include "plugin/config.h"
 
 #include <windows.h>
 #include <cmath>

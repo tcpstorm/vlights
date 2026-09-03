@@ -18,6 +18,7 @@ WORKDIR /src
 COPY CMakeLists.txt lodlight_recolor.ini ./
 COPY cmake/ cmake/
 COPY src/ src/
+COPY res/ res/
 COPY third_party/ third_party/
 COPY tests/ tests/
 

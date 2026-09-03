@@ -3,10 +3,8 @@
 // Layouts are taken from citizenfx/fivem
 //   code/components/gta-streaming-five/include/EntitySystem.h
 // (CDistantLODLight and CMapData, with Cfx's own "+N" offset comments) and
-// cross-checked against CodeWalker's parsed metadata for CDistantLODLight
-// (CodeWalker.Core/GameFiles/MetaTypes/MetaTypes.cs: position @8, RGBI @24,
-// numStreetLights @40, category @42, size 48). The static_asserts below make
-// a layout mistake a compile error instead of a silent bad write.
+// confirmed in-game. The static_asserts below make a layout mistake a
+// compile error instead of a silent bad write.
 #pragma once
 
 #include <cstddef>
@@ -56,7 +54,7 @@ struct CMapData
 	uint32_t name;         // +8   joaat hash of the ymap name
 	uint32_t parent;       // +12
 	int32_t flags;         // +16
-	int32_t contentFlags;  // +20  bit 7 = LOD lights, bit 8 = distant LOD lights (CodeWalker)
+	int32_t contentFlags;  // +20  bit 7 = LOD lights, bit 8 = distant LOD lights
 	uint8_t pad_18[8];
 	Vec4 streamingExtentsMin; // +32
 	Vec4 streamingExtentsMax; // +48

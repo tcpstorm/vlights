@@ -1,14 +1,14 @@
 # LOD Light Recolor
 
 A standalone FiveM `.asi` plugin that recolors distant / LOD street lights
-(the sodium-orange billboards you see across the city at night) to a
+(the sodium-orange lamps you see across the city at night) to a
 configurable colour, at map-data load time, client-side only. Purely
 cosmetic: it rewrites colour bytes in already-loaded map data and changes
 nothing else.
 
-Built for GTA World, which streams its own LOD-light ymaps (so a `mods/`
-folder replacement loses to the streamed pack), but nothing in it is
-server-specific.
+Made for servers that stream their own LOD-light ymaps, where a `mods/`
+folder replacement loses to the streamed pack. Nothing in it is
+server-specific; story mode works the same.
 
 Includes an in-game menu (F10 by default) for tuning colours live, and a
 reload hotkey (F9) for the ini. Both repaint every loaded light instantly.
@@ -59,8 +59,8 @@ store the map hook already receives:
    e.g. `pack:/prop_streetlight_01`.
 5. Light arrays: drawable +0xB0/+0xB8, fragment +0x110/+0x118 plus its
    drawable(s), dictionary +0x30/+0x38; each `CLightAttr` is 168 bytes with
-   colour at +24 and volume colour at +84 (CodeWalker `Drawable.cs` /
-   `Frag.cs`). Lights with a flashiness setting are left alone.
+   colour at +24 and volume colour at +84. Lights with a flashiness
+   setting are left alone.
 
 **Never call vtable slot 8 on the model stores expecting a read-only
 `GetPtr`.** It is not one there: it wrote through a null array at the slot
@@ -77,12 +77,13 @@ guessed.
 
 | Fact | Source |
 | --- | --- |
-| `CDistantLODLight` layout: vtable, `positions` +8, `rgbi` +24, `numStreetLights` +40, `category` +42, 48 bytes | citizenfx/fivem `code/components/gta-streaming-five/include/EntitySystem.h`; independently CodeWalker `MetaTypes.cs` (`CDistantLODLight`: position @8, RGBI @24, numStreetLights @40, category @42) |
+| `CDistantLODLight` layout: vtable, `positions` +8, `rgbi` +24, `numStreetLights` +40, `category` +42, 48 bytes | citizenfx/fivem `code/components/gta-streaming-five/include/EntitySystem.h` |
 | `CMapData::distantLodLights` at +392, `name` at +8 | same FiveM header (Cfx's own `// +392` comment) |
 | Byte pattern for `fwMapDataStore::FinishLoading`: `25 00 0C 00 00 3D 00 08 00 00 49 8B 06`, function starts at match `-0x6F` | citizenfx/fivem `code/components/gta-streaming-five/src/LoadStreamingFile.cpp`, the `MH_CreateHook(hook::get_pattern(...))` line. Cfx maintains this across game builds. |
-| `rgbi` entries are `0xIIRRGGBB` (intensity in the top byte) | CodeWalker `YmapFile.cs` (`Color.FromBgra(colours[i])`, `Colour.ToBgra()`) and `DistantLightsVS.hlsl` (`Unpack4x8` is high-byte-first, then `.gbar`). CodeWalker renders these lights with that decode and they look right, which is strong but indirect evidence. Confirm in-game once with `log_samples` (below). |
+| `rgbi` entries are `0xIIRRGGBB` (intensity in the top byte) | Confirmed in-game: vanilla sodium street lights decode as e.g. `0xAAFF780A` = RGB (255,120,10), intensity 170, and recolouring on that assumption produces the expected colour. |
 | `.asi` files in `FiveM.app/plugins/` are loaded at game load unless the server's `sv_pureLevel` is 2 or higher. `sv_scriptHookAllowed` only gates Script Hook V natives, which this plugin never uses. | citizenfx/fivem `code/components/asi-five/src/Component.cpp`, `code/components/scripthookv/src/VishCompat.cpp` |
 | FiveM refuses any `.asi` on game build 2189+ unless it carries a resource named `FX_ASI_BUILD` whose type is the numeric game build. `src/LodLightRecolor.rc` declares one entry per build FiveM currently ships; add a line when a new build appears (FiveM's own log tells you the number). | citizenfx/fivem `code/components/asi-five/src/Component.cpp` (`FindResource(hModule, L"FX_ASI_BUILD", MAKEINTRESOURCE(gameBuild))`) |
+| Model and light-attribute layouts (drawable, fragment, dictionary, 168-byte `CLightAttr`) | First taken from CodeWalker's resource parsers, then confirmed in-game: model names read back through the name pointers, and `prop_streetlight_01` decodes to its known sodium spot light. |
 | `numStreetLights` cannot be used as the loop bound: CodeWalker's LOD-light generator hardcodes `isStreetLight = false; //TODO: fix this!`, so custom packs made with it ship with `numStreetLights = 0`. The plugin iterates the whole `rgbi` array and matches by colour instead. | CodeWalker `Project/Panels/GenerateLODLightsPanel.cs` |
 
 Compile-time `static_assert`s in `src/GameStructs.h` pin every offset above,
@@ -120,7 +121,7 @@ next to itself on first run.
 
 Before investing time, confirm the server allows plugins. Its public
 `info.json` (`http://<server>:30120/info.json`, under `vars`) reports
-`sv_pureLevel`. Anything below 2 is fine. GTA World reports 0.
+`sv_pureLevel`. Anything below 2 is fine.
 
 Whether a given server's *rules* permit a cosmetic client plugin is your
 call, not the plugin's.
@@ -257,21 +258,21 @@ and `kFinishLoadingOffset` in `src/GameStructs.h`.
 ## Layout
 
 ```
-src/Recolor.h      colour math (pure, header-only, unit-tested)
-src/GameStructs.h  RAGE struct layouts + static_asserts, Cfx's pattern
-src/Pattern.*      pattern scanner over the main module
-src/Config.*       ini parsing, default ini text
-src/Log.*          tiny thread-safe file logger
-src/LodLightRecolor.rc  FX_ASI_BUILD resources (one per supported game build)
-third_party/minhook  MinHook v1.3.4 + marked patches (see Caveats)
-third_party/imgui    Dear ImGui v1.92.9b (core + dx11/win32 backends)
-src/Main.cpp       DllMain, the map detour, live repaint registry, hotkeys
-src/Overlay.cpp    the menu: own top-level window + D3D11 device + ImGui, no game hooks
-src/Track.*        live-repaint registry: per-store Remove detours + pool liveness checks
-src/NearLights.*   model (near-tier) light recolouring via PlaceResource detours
-src/Shared.h       core <-> overlay interface
-tests/             host-native tests, run during the Docker build
-cmake/             mingw-w64 toolchain file
-Dockerfile         the build
-build.ps1          docker build wrapper, optional -Install
+src/main.cpp            DllMain, startup, hotkey thread
+src/plugin/             plugin core: config state + ini (config.*), logger (log.*),
+                        the interface the hooks and menu share (plugin.h/.cpp)
+src/color/recolor.h     colour math (pure, header-only, unit-tested)
+src/hook/pattern.*      byte-pattern scanner over the main module
+src/game/structs.h      RAGE struct layouts + static_asserts, Cfx's byte pattern
+src/game/lod_lights.*   the ymap FinishLoading detour: distant / LOD lights
+src/game/near_lights.*  model (near-tier) lights via the store load-complete detour
+src/game/track.*        live-repaint registry: per-store Remove detours + pool liveness
+src/ui/menu.cpp         the menu: own top-level window + D3D11 + ImGui, camera lock
+res/LodLightRecolor.rc  FX_ASI_BUILD resources (one per supported game build)
+tests/                  host-native tests, run during the Docker build
+third_party/minhook     MinHook v1.3.4 + marked patches (see Caveats)
+third_party/imgui       Dear ImGui v1.92.9b (core + dx11/win32 backends)
+cmake/                  mingw-w64 toolchain file
+Dockerfile              the build
+build.ps1               docker build wrapper, optional -Install
 ```

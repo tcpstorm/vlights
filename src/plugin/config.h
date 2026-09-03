@@ -1,5 +1,5 @@
 #pragma once
-#include "Recolor.h"
+#include "color/recolor.h"
 
 #include <string>
 

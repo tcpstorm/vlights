@@ -1,5 +1,5 @@
-#include "Track.h"
-#include "Log.h"
+#include "game/track.h"
+#include "plugin/log.h"
 
 #include <windows.h>
 #include <MinHook.h>

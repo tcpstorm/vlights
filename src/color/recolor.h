@@ -25,11 +25,8 @@ namespace lodlight
 	// --- packing -----------------------------------------------------------
 	//
 	// CDistantLODLight::rgbi entries are 0xIIRRGGBB: intensity in the top
-	// byte, then R, G, B. This matches how CodeWalker both writes them
-	// (YmapFile.cs: colours[i] = Colour.ToBgra()) and reads them back
-	// (Color.FromBgra), and how its DistantLightsVS.hlsl unpacks them
-	// (Unpack4x8 is high-byte-first, then swizzled .gbar -> r,g,b,intensity).
-	// Confirm once in-game with log_samples (see README) before trusting it.
+	// byte, then R, G, B. Confirmed in-game: vanilla sodium street lights
+	// decode as e.g. 0xAAFF780A = (255,120,10), intensity 170.
 	inline RGB Unpack(uint32_t packed)
 	{
 		return RGB{

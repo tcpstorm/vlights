@@ -39,14 +39,16 @@ if(WIN32)
     target_link_libraries(imgui PUBLIC d3d11 d3dcompiler_47 dwmapi)
 
     add_library(LodLightRecolor SHARED
-        src/Main.cpp
-        src/Overlay.cpp
-        src/Track.cpp
-        src/NearLights.cpp
-        src/Config.cpp
-        src/Log.cpp
-        src/Pattern.cpp
-        src/LodLightRecolor.rc)
+        src/main.cpp
+        src/plugin/plugin.cpp
+        src/plugin/config.cpp
+        src/plugin/log.cpp
+        src/hook/pattern.cpp
+        src/game/lod_lights.cpp
+        src/game/near_lights.cpp
+        src/game/track.cpp
+        src/ui/menu.cpp
+        res/LodLightRecolor.rc)
     target_include_directories(LodLightRecolor PRIVATE src)
     target_link_libraries(LodLightRecolor PRIVATE minhook imgui)
     target_compile_definitions(LodLightRecolor PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)

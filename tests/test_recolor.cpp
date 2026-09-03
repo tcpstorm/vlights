@@ -1,7 +1,7 @@
 // Host-native tests for Recolor.h. Built and run inside the Docker build
 // before the .asi is cross-compiled, so a colour-math regression fails the
 // build.
-#include "Recolor.h"
+#include "color/recolor.h"
 
 #include <cmath>
 #include <cstdio>

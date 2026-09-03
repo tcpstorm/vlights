@@ -1,4 +1,4 @@
-// Overlay.cpp - the settings menu, as a separate always-on-top window.
+// menu.cpp - the settings menu, as a separate always-on-top window.
 //
 // This deliberately does NOT hook the game's renderer. An earlier build
 // detoured IDXGISwapChain::Present and subclassed the game window, and
@@ -7,15 +7,21 @@
 // with its own D3D11 device and swapchain and renders Dear ImGui into that,
 // exactly like ImGui's stock Win32 + DirectX 11 example. It floats over the
 // (borderless) game window, takes its own input, and touches nothing of the
-// game's. Cost: it is a window, not an in-game overlay, so clicking it
-// takes focus from the game while you use it.
+// game's.
 //
-// Threads: OverlayInit() (worker thread) spawns the UI thread, which owns
-// the window, the device, the ImGui context and the message loop.
-// OverlayToggle() just posts a message to it.
-#include "Log.h"
-#include "Recolor.h"
-#include "Shared.h"
+// Camera lock: the game reads the mouse through raw input registered for
+// the whole process (with RIDEV_INPUTSINK it keeps receiving movement even
+// when our window has focus, so the camera would spin while you drag a
+// slider). While the menu is open the mouse is unregistered from raw input
+// and the game's exact original registration is restored on close. That is
+// an OS call on our own process, no game hook involved.
+//
+// Threads: MenuInit() (worker thread) spawns the UI thread, which owns the
+// window, the device, the ImGui context and the message loop. MenuToggle()
+// just posts a message to it.
+#include "color/recolor.h"
+#include "plugin/log.h"
+#include "plugin/plugin.h"
 
 #include <windows.h>
 #include <d3d11.h>
@@ -26,8 +32,8 @@
 #include "imgui_impl_win32.h"
 
 #include <atomic>
-#include <cmath>
 #include <string>
+#include <vector>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -38,10 +44,10 @@ namespace
 
 	constexpr UINT WM_LODLIGHT_TOGGLE = WM_APP + 1;
 	constexpr int kWidth = 470;
-	constexpr int kHeight = 560;
+	constexpr int kHeight = 600;
+	constexpr DWORD kFrameMs = 16; // ~60 fps cap for the menu
 
 	HWND g_hwnd = nullptr;
-	DWORD g_uiThreadId = 0;
 	std::atomic<bool> g_visible{ false };
 	std::atomic<bool> g_ready{ false };
 	std::atomic<bool> g_failed{ false };
@@ -57,6 +63,65 @@ namespace
 	lodlight::Config g_menuCfg;
 	bool g_menuCfgLoaded = false;
 	std::string g_status;
+
+	// ------------------------------------------------------------ camera lock
+
+	std::vector<RAWINPUTDEVICE> g_savedMouse;
+	bool g_mouseSuspended = false;
+
+	void SuspendGameMouse()
+	{
+		if (g_mouseSuspended)
+			return;
+		UINT n = 0;
+		if (GetRegisteredRawInputDevices(nullptr, &n, sizeof(RAWINPUTDEVICE)) != 0 || n == 0)
+		{
+			lodlight::Log("menu: no raw input devices registered in this process; camera lock not needed");
+			return;
+		}
+		std::vector<RAWINPUTDEVICE> all(n);
+		UINT got = GetRegisteredRawInputDevices(all.data(), &n, sizeof(RAWINPUTDEVICE));
+		if (got == static_cast<UINT>(-1))
+		{
+			lodlight::Log("menu: GetRegisteredRawInputDevices failed, error=%lu", GetLastError());
+			return;
+		}
+		g_savedMouse.clear();
+		for (UINT i = 0; i < got; ++i)
+			if (all[i].usUsagePage == 0x01 && all[i].usUsage == 0x02) // generic desktop / mouse
+				g_savedMouse.push_back(all[i]);
+		if (g_savedMouse.empty())
+		{
+			lodlight::Log("menu: the game has no raw mouse registration; camera lock not needed");
+			return;
+		}
+		RAWINPUTDEVICE remove{};
+		remove.usUsagePage = 0x01;
+		remove.usUsage = 0x02;
+		remove.dwFlags = RIDEV_REMOVE;
+		remove.hwndTarget = nullptr;
+		if (!RegisterRawInputDevices(&remove, 1, sizeof(remove)))
+		{
+			lodlight::Log("menu: could not unregister raw mouse input, error=%lu", GetLastError());
+			return;
+		}
+		g_mouseSuspended = true;
+		lodlight::Log("menu: camera locked (raw mouse input suspended; %u registration(s) saved, flags 0x%lX)",
+			(unsigned)g_savedMouse.size(), (unsigned long)g_savedMouse[0].dwFlags);
+	}
+
+	void RestoreGameMouse()
+	{
+		if (!g_mouseSuspended)
+			return;
+		if (!RegisterRawInputDevices(g_savedMouse.data(), static_cast<UINT>(g_savedMouse.size()), sizeof(RAWINPUTDEVICE)))
+			lodlight::Log("menu: could not restore raw mouse input, error=%lu", GetLastError());
+		else
+			lodlight::Log("menu: camera unlocked (raw mouse input restored)");
+		g_mouseSuspended = false;
+	}
+
+	// ------------------------------------------------------------ D3D
 
 	template <typename T>
 	void SafeRelease(T*& p)
@@ -82,8 +147,6 @@ namespace
 	{
 		DXGI_SWAP_CHAIN_DESC sd{};
 		sd.BufferCount = 2;
-		sd.BufferDesc.Width = 0;
-		sd.BufferDesc.Height = 0;
 		sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		sd.BufferDesc.RefreshRate.Numerator = 60;
 		sd.BufferDesc.RefreshRate.Denominator = 1;
@@ -98,7 +161,7 @@ namespace
 		D3D_FEATURE_LEVEL got{};
 		HRESULT hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, levels, 2,
 			D3D11_SDK_VERSION, &sd, &g_swapChain, &g_device, &got, &g_context);
-		if (hr == DXGI_ERROR_UNSUPPORTED || FAILED(hr))
+		if (FAILED(hr))
 		{
 			hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, levels, 2,
 				D3D11_SDK_VERSION, &sd, &g_swapChain, &g_device, &got, &g_context);
@@ -117,6 +180,28 @@ namespace
 		SafeRelease(g_swapChain);
 		SafeRelease(g_context);
 		SafeRelease(g_device);
+	}
+
+	// ------------------------------------------------------------ window
+
+	void ShowMenu(HWND hwnd)
+	{
+		HWND game = FindWindowW(L"grcWindow", nullptr);
+		RECT r{};
+		if (game && GetWindowRect(game, &r))
+			SetWindowPos(hwnd, HWND_TOPMOST, r.left + 40, r.top + 60, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+		ShowWindow(hwnd, SW_SHOWNA);
+		SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		g_menuCfgLoaded = false;
+		g_visible = true;
+		SuspendGameMouse();
+	}
+
+	void HideMenu(HWND hwnd)
+	{
+		ShowWindow(hwnd, SW_HIDE);
+		g_visible = false;
+		RestoreGameMouse();
 	}
 
 	LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -139,35 +224,16 @@ namespace
 				return 0;
 			break;
 		case WM_CLOSE:
-			ShowWindow(hwnd, SW_HIDE);
-			g_visible = false;
+			HideMenu(hwnd);
 			return 0;
 		case WM_LODLIGHT_TOGGLE:
-		{
-			bool show = !g_visible.load();
-			if (show)
-			{
-				// Park it over the game window if we can find one.
-				HWND game = FindWindowW(L"grcWindow", nullptr);
-				RECT r{};
-				if (game && GetWindowRect(game, &r))
-				{
-					int x = r.left + 40;
-					int y = r.top + 60;
-					SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-				}
-				ShowWindow(hwnd, SW_SHOWNA);
-				SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				g_menuCfgLoaded = false;
-			}
+			if (g_visible.load())
+				HideMenu(hwnd);
 			else
-			{
-				ShowWindow(hwnd, SW_HIDE);
-			}
-			g_visible = show;
+				ShowMenu(hwnd);
 			return 0;
-		}
 		case WM_DESTROY:
+			RestoreGameMouse();
 			PostQuitMessage(0);
 			return 0;
 		default:
@@ -175,6 +241,8 @@ namespace
 		}
 		return DefWindowProcW(hwnd, msg, wParam, lParam);
 	}
+
+	// ------------------------------------------------------------ ImGui content
 
 	void SetTarget(float r, float g, float b)
 	{
@@ -255,13 +323,14 @@ namespace
 
 			ImGui::SeparatorText("Status");
 			lodlight::Stats st = lodlight::GetStats();
-			ImGui::Text("Loaded blocks: %llu", (unsigned long long)st.loadedNow);
+			ImGui::Text("Loaded objects: %llu", (unsigned long long)st.loadedNow);
 			ImGui::Text("Lights now: %llu   recolored: %llu",
 				(unsigned long long)st.lastRepaintLights, (unsigned long long)st.lastRepaintRecolored);
-			ImGui::TextDisabled("Since start: %llu blocks, %llu lights, %llu recolored",
+			ImGui::TextDisabled("Since start: %llu blocks, %llu LOD lights, %llu recolored",
 				(unsigned long long)st.blocksWithLights, (unsigned long long)st.lights, (unsigned long long)st.recolored);
 			ImGui::TextDisabled("Models: %llu with %llu lights, %llu recolored at load",
 				(unsigned long long)st.nearModels, (unsigned long long)st.nearLights, (unsigned long long)st.nearRecolored);
+			ImGui::TextDisabled(g_mouseSuspended ? "Camera locked while this window is open." : "Camera not locked (no raw mouse registration found).");
 
 			ImGui::Separator();
 			if (ImGui::Button("Save to ini"))
@@ -290,7 +359,7 @@ namespace
 			if (!g_status.empty())
 				ImGui::TextWrapped("%s", g_status.c_str());
 
-			ImGui::TextDisabled("Changes apply instantly to all loaded LOD lights.");
+			ImGui::TextDisabled("Changes apply instantly to all loaded lights.");
 			ImGui::TextDisabled("Press the menu key again, or Close, to hide this window.");
 		}
 		ImGui::End();
@@ -323,8 +392,6 @@ namespace
 
 	DWORD WINAPI UiThread(LPVOID)
 	{
-		g_uiThreadId = GetCurrentThreadId();
-
 		WNDCLASSEXW wc{};
 		wc.cbSize = sizeof(wc);
 		wc.style = CS_CLASSDC;
@@ -394,10 +461,12 @@ namespace
 			if (g_visible.load())
 			{
 				RenderFrame();
-				Sleep(16); // ~60 fps cap for the menu, independent of the game
+				Sleep(kFrameMs);
 			}
 			else
+			{
 				WaitMessage(); // idle until toggled
+			}
 		}
 
 		ImGui_ImplDX11_Shutdown();
@@ -410,7 +479,7 @@ namespace
 
 namespace lodlight
 {
-	bool OverlayInit()
+	bool MenuInit()
 	{
 		HANDLE h = CreateThread(nullptr, 0, UiThread, nullptr, 0, nullptr);
 		if (!h)
@@ -422,14 +491,14 @@ namespace lodlight
 		return true;
 	}
 
-	void OverlayToggle()
+	void MenuToggle()
 	{
 		if (!g_ready.load() || g_failed.load() || !g_hwnd)
 			return;
 		PostMessageW(g_hwnd, WM_LODLIGHT_TOGGLE, 0, 0);
 	}
 
-	bool OverlayVisible()
+	bool MenuVisible()
 	{
 		return g_visible.load();
 	}
