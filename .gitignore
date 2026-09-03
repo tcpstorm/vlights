@@ -1,0 +1,61 @@
+# ---- build outputs -----------------------------------------------------------
+build/
+build-*/
+cmake-build-*/
+out/
+dist/
+dist-sym/
+*.asi
+*.dll
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+syms.txt
+
+# ---- CMake / Visual Studio / Ninja ---------------------------------------------
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+.ninja_deps
+.ninja_log
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+.vs/
+x64/
+Debug/
+Release/
+
+# ---- runtime artifacts the plugin writes next to itself -------------------------
+*.log
+*.dmp
+*.dmp.gamelog
+# the ini in the repo root is the shipped default; copies elsewhere are user state
+plugins/
+
+# ---- editors / OS ----------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- scratch: screenshots, notes, local experiments ---------------------------
+exclude/
+scratch/
+*.png
+*.jpg
+__pycache__/
+*.pyc

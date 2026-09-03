@@ -1,0 +1,6 @@
+*.log
+.git/
+build-*/
+build/
+dist-sym/
+dist/
