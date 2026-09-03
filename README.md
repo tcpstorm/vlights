@@ -25,20 +25,47 @@ reload hotkey (F9) for the ini. Both repaint every loaded light instantly.
 3. This plugin detours the same function, walks `rgbi[]`, and rewrites every
    entry whose hue/saturation looks like sodium orange to the target colour
    before the game ever reads it. The mid-range LOD lights take their colour
-   from these same entries by index, so both LOD tiers change together. The
-   near-range light on the actual streetlight prop is not touched (that is
-   the model's own light) unless `near_enabled` is on, see below.
+   from these same entries by index, so both LOD tiers change together.
+4. The near-range light of a lamp comes from one of two places, and the
+   plugin recolours both in the same load hooks (`near_enabled`, default
+   on): the `CLightAttr` array baked into the prop's model, and, for a
+   large share of vanilla lamp placements, a per-entity light-effect
+   extension stored in the `.ymap` itself that overrides the model's
+   lights. See "Nearby lamps" below.
 
-## Nearby lamps (model lights)
+## Nearby lamps (model and entity lights)
 
-Lamps within entity range are lit by `CLightAttr` entries baked into the
-prop's model, not by the LOD ymaps. With `near_enabled = 1` (default) the
-plugin also recolours those with the same matcher and target, so near and
-far tiers agree. Verified live on b3751: `prop_streetlight_01` carries one
-spot light at (255,104,0), intensity 32, and comes out recoloured.
+Lamps within entity range are lit by the game's own light entities, which
+are created when the lamp spawns from one of two definitions:
 
-How (`src/NearLights.cpp`), every step checked at runtime against the ymap
-store the map hook already receives:
+- the `CLightAttr` array baked into the prop's model (`prop_streetlight_01`
+  carries one spot light at (255,104,0), intensity 32);
+- a `CExtensionDefLightEffect` on the *entity* inside the `.ymap`, which
+  overrides the model's lights for that one placement. Vanilla Los Santos
+  uses these a lot: one downtown session saw 107 map blocks carrying them,
+  most in sodium orange (255,89,7). This is why a lamp can stay orange even
+  though its model was recoloured. (The same extension can sit on
+  archetypes in `.ytyp` files; the plugin handles that too, but no vanilla
+  archetype has one.)
+
+With `near_enabled = 1` (default) the plugin recolours both with the same
+matcher and target, before the game copies them into its light entities, so
+near and far tiers agree.
+
+**Near lights do not repaint live.** The game copies the definitions when
+it spawns the lamp and reads the copies from then on. A colour change from
+the menu or ini applies to the LOD tiers instantly, and to near lamps as
+they stream in again (leave the area and come back, or reload). The LOD
+tiers repaint live because the game reads those arrays in place.
+
+Entity light effects are read in the ymap hook itself: `fwEntityDef`
+(128 bytes: archetype hash +8, position +32, extensions `atArray` +96),
+extension type via the `parStructure` returned by vtable slot 7 (name hash
+`0x27922C43` = `joaat("CExtensionDefLightEffect")`), instances at +32 as
+160-byte `CLightAttrDef` (colour +20, flashiness +23, volume colour +80).
+
+Model lights (`src/game/near_lights.cpp`), every step checked at runtime
+against the ymap store the map hook already receives:
 
 1. The streaming manager comes from a pattern Cfx maintains in its own
    `Streaming.cpp`; its module table is found by searching the manager for
@@ -146,21 +173,30 @@ back live.
 | `enabled` | `1` | Master switch. |
 | `source` | `255 147 41` | Colour being hunted. Only its hue matters. `R G B` or `#RRGGBB`. |
 | `target` | `235 240 255` | What matching lights become. |
-| `hue_window` | `13` | Degrees either side of `source`'s hue that still count as a match. Vanilla sodium street lights decode to hue 17-30 (e.g. `255 120 10`, `255 104 0`, `255 146 49`); warm amber signage sits at 36-45 and amber runway lights at 44. |
-| `min_saturation` | `0.6` | Lights below this saturation are skipped. Sodium is 0.75-1.0; warm whites and cream signage are 0.1-0.5. |
+| `hue_window` | `13` | Degrees either side of `source`'s hue that still count as a match. Sodium lamps decode to hue 17-33 (`255 104 0`, `255 120 10`, `255 162 52`). |
+| `min_saturation` | `0.6` | Lights below this saturation are skipped in the sodium zone. Sodium is 0.75-1.0. |
+| `match_cream` | `1` | Second match zone for the cream freeway lamps (`prop_streetlight_06`/`_08`, light colour `255 227 166`: hue 41, saturation 0.35). |
+| `source2` | `255 227 166` | Reference colour of that zone (hue only). |
+| `hue_window2` | `14` | Hue window of the cream zone: covers the cream freeway lamps (hue 41) and the pale-yellow street lights baked into downtown map pieces such as `dt1_21_ground1_decals` (hue 48-55). |
+| `min_saturation2` / `max_saturation2` | `0.30` / `0.70` | Saturation band of the cream zone. The ceiling keeps amber runway edge lights (0.99) and car-park lights (0.93) out; the floor keeps cream-white wall lights (0.07-0.21) out. |
 | `blend` | `1.0` | 1 = replace with `target`, 0.5 = halfway, 0 = untouched. |
 | `keep_brightness` | `1` | Scale `target` so each light keeps its own brightness instead of every light becoming identical. |
+| `debug` | `0` | Master switch for every per-object log line (`log_samples`, `log_blocks`, `near_log`, first-call traces). Off, the plugin writes nothing during play. On, it costs frame time while models stream in. |
 | `log_samples` | `0` | Log the first N raw entries seen (raw hex, decoded RGB, HSV, position, match). |
 | `log_blocks` | `0` | One log line per map block with counts. |
 | `reload_key` | `F9` | `F1`..`F24`, or a hex/decimal virtual-key code. `0` disables. |
 | `menu_key` | `F10` | Toggles the menu window. `0` disables it entirely. |
 | `live_repaint` | `1` | Repaint already-loaded blocks on reload/menu changes. `0` = changes only affect blocks that stream in later. |
 | `near_enabled` | `1` | Also recolour model (near-tier) lights. Hooks install at game start; changing this needs a restart. |
-| `near_log` | `0` | Log one line per placed model that has lights. |
+| `near_log` | `0` | Log one line per placed model or map block that has lights, with a breakdown of its light colours. F9 also prints every warm colour that matched nothing so far. |
+| `probe` | `0 0 25` | `x y radius`. With `debug` on, every block that streams in is scanned and the entities and LOD lights within `radius` of that world point are logged (model hash, extensions with their light colours, original colour). This is how the entity-light tier was found. `0 0` = off. |
 
 Matching is done in hue/saturation rather than RGB distance so it is
 brightness-invariant: a dim sodium light and a bright one both match, while
-yellow traffic lights, red brake lights and white LEDs do not.
+yellow traffic lights, red brake lights and white LEDs do not. The second
+zone exists because the freeway overhead lamps use a cream light that is
+neither sodium nor white; it is matched by a narrow hue window with a
+saturation ceiling.
 
 ## Menu window
 
@@ -186,12 +222,13 @@ clicking the window takes focus from the game while you use it.
 Hook fires on every map block, ~51k lights walked in one session, ~25%
 recolored. Vanilla sodium decodes as `0xAAFF780A`-style values (intensity
 170, RGB `255 120 10`), confirming `0xIIRRGGBB`. A green diagnostic target
-was visible across the whole distant city; lamps within entity-light range
-stay original, as designed.
+was visible across the whole distant city. Near lamps: model lights and
+ymap entity light effects both confirmed recoloured at the lamp (Little
+Seoul, `prop_streetlight_03d` with an entity light effect at (255,89,7)).
 
 ## First run: verify the byte order
 
-1. Set `log_samples = 40` and `log_blocks = 1`, join the server at night, stand
+1. Set `debug = 1`, `log_samples = 40` and `log_blocks = 1`, join the server at night, stand
    somewhere with clearly orange street lights in the distance.
 2. Open `lodlight_recolor.log` next to the `.asi`. You should see
    `hook installed`, then sample lines like
@@ -199,7 +236,7 @@ stay original, as designed.
    If orange lights decode with R and B swapped (e.g. `rgb=(41,147,255)`),
    the packing assumption is wrong: swap the shifts in `Unpack`/`Pack` in
    `src/Recolor.h` and rebuild. That is the entire blast radius.
-3. Set both log keys back to `0`.
+3. Set `debug` back to `0`.
 
 If there is no log at all, check FiveM's own log in `FiveM.app\logs\` for
 `Unable to load ... does not claim to support game build N`: add
@@ -245,6 +282,17 @@ and `kFinishLoadingOffset` in `src/GameStructs.h`.
   the map load hook. An `NtGetNextThread` fallback exists behind the flag.
 - **No render hooks at all.** See "Menu window" above. `menu_key = 0`
   disables the menu window entirely.
+- **Memory checks under the anti-cheat.** `VirtualQuery` on heap addresses
+  has measured anywhere from 4 microseconds to 1.3 milliseconds per call
+  between sessions; a `ReadProcessMemory` self-probe has been under a
+  microsecond every time. Both are timed at the first map load and the
+  probe is preferred; without either, only vtable-in-image checks remain.
+  Startup sweeps never do per-slot syscalls (that hung loading at
+  `ambient_SD.ipl`).
+- **Live repaint of near lights validates every pointer first.** Blocks are
+  walked again from the menu thread long after they loaded; the entity
+  array and each entity are probed before use, and a block that fails is
+  dropped from the registry (0.15.0 crashed there once).
 - **Anti-cheat.** The `plugins/` folder is a first-party Cfx extension point
   and the plugin only touches map data, but a server running its own
   module-scanning anti-cheat could still flag an unknown DLL. Unknown; not

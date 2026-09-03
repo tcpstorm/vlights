@@ -48,7 +48,7 @@ namespace lodlight::track
 		uintptr_t g_base = 0;
 		size_t g_size = 0;
 
-		const char* kNames[KindCount] = { "ymap", "ydr", "yft", "ydd" };
+		const char* kNames[KindCount] = { "ymap", "ydr", "yft", "ydd", "ytyp" };
 
 		const PoolBase* Pool(void* store)
 		{
@@ -113,7 +113,8 @@ namespace lodlight::track
 			case 0: return reinterpret_cast<void*>(&RemoveThunk<0>);
 			case 1: return reinterpret_cast<void*>(&RemoveThunk<1>);
 			case 2: return reinterpret_cast<void*>(&RemoveThunk<2>);
-			default: return reinterpret_cast<void*>(&RemoveThunk<3>);
+			case 3: return reinterpret_cast<void*>(&RemoveThunk<3>);
+			default: return reinterpret_cast<void*>(&RemoveThunk<4>);
 			}
 		}
 
@@ -244,6 +245,21 @@ namespace lodlight::track
 		}
 		ReleaseSRWLockExclusive(&g_lock);
 		return t;
+	}
+
+	void ForEachLoaded(Kind k, VisitFn fn, void* user)
+	{
+		AcquireSRWLockShared(&g_lock);
+		StoreState& st = g_stores[k];
+		if (st.store)
+		{
+			for (auto& kv : st.entries)
+			{
+				if (SlotLive(st, kv.first, kv.second))
+					fn(kv.second.obj, kv.first, user);
+			}
+		}
+		ReleaseSRWLockShared(&g_lock);
 	}
 
 	uint64_t CountLoaded()

@@ -14,6 +14,7 @@
 // never needs to suspend threads here (see third_party/minhook/src/hook.c;
 // FiveM stubs out the Toolhelp snapshot anyway).
 #include "game/lod_lights.h"
+#include "game/near_lights.h"
 #include "plugin/config.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
@@ -64,6 +65,7 @@ namespace
 						(unsigned long long)st.calls, (unsigned long long)st.blocksWithLights, (unsigned long long)st.lights,
 						(unsigned long long)st.recolored, (unsigned long long)st.nearModels, (unsigned long long)st.nearLights,
 						(unsigned long long)st.nearRecolored, (unsigned long long)st.loadedNow);
+					lodlight::Log("unmatched warm light colours so far:%s", lodlight::nearlights::UnmatchedWarmSummary().c_str());
 					if (lodlight::ReloadConfigFromDisk("hotkey"))
 						lodlight::ReapplyAll();
 				}

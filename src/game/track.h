@@ -28,7 +28,8 @@ namespace lodlight::track
 		Ydr = 1,
 		Yft = 2,
 		Ydd = 3,
-		KindCount = 4
+		Ytyp = 4,
+		KindCount = 5
 	};
 
 	// Restore `originals` into `obj` and recolour per `cfg`. Returns false if
@@ -51,5 +52,10 @@ namespace lodlight::track
 	Totals ReapplyAll(const Config& cfg);
 
 	uint64_t CountLoaded();
+
+	// Visit every object of kind `k` still loaded (liveness checked against
+	// the pool first). Any thread; the registry lock is held during the walk.
+	using VisitFn = void (*)(void* obj, uint32_t idx, void* user);
+	void ForEachLoaded(Kind k, VisitFn fn, void* user);
 	const char* KindName(Kind k);
 }

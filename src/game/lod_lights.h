@@ -4,6 +4,8 @@
 // model-light hooks are installed from inside it.
 #pragma once
 
+#include "plugin/config.h"
+
 #include <cstdint>
 
 namespace lodlight::lodlights

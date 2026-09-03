@@ -44,7 +44,7 @@ namespace
 
 	constexpr UINT WM_LODLIGHT_TOGGLE = WM_APP + 1;
 	constexpr int kWidth = 470;
-	constexpr int kHeight = 600;
+	constexpr int kHeight = 720;
 	constexpr DWORD kFrameMs = 16; // ~60 fps cap for the menu
 
 	HWND g_hwnd = nullptr;
@@ -184,14 +184,31 @@ namespace
 
 	// ------------------------------------------------------------ window
 
+	// The game hides, clips and re-centres the OS cursor for its own window
+	// every frame. Rather than fight that, the menu draws its own cursor
+	// (ImGui software cursor), takes focus and pulls the pointer inside when
+	// it opens, and releases any cursor clip while it is up.
+	void FreeCursor()
+	{
+		ClipCursor(nullptr);
+		while (ShowCursor(TRUE) < 0) {} // our thread's show count, in case it went negative
+	}
+
 	void ShowMenu(HWND hwnd)
 	{
 		HWND game = FindWindowW(L"grcWindow", nullptr);
 		RECT r{};
 		if (game && GetWindowRect(game, &r))
 			SetWindowPos(hwnd, HWND_TOPMOST, r.left + 40, r.top + 60, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-		ShowWindow(hwnd, SW_SHOWNA);
-		SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		ShowWindow(hwnd, SW_SHOW);
+		SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+		SetForegroundWindow(hwnd);
+		SetActiveWindow(hwnd);
+		SetFocus(hwnd);
+		FreeCursor();
+		RECT me{};
+		if (GetWindowRect(hwnd, &me))
+			SetCursorPos((me.left + me.right) / 2, (me.top + me.bottom) / 2);
 		g_menuCfgLoaded = false;
 		g_visible = true;
 		SuspendGameMouse();
@@ -202,6 +219,8 @@ namespace
 		ShowWindow(hwnd, SW_HIDE);
 		g_visible = false;
 		RestoreGameMouse();
+		if (HWND game = FindWindowW(L"grcWindow", nullptr))
+			SetForegroundWindow(game); // give the game its input back
 	}
 
 	LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -222,6 +241,13 @@ namespace
 		case WM_SYSCOMMAND:
 			if ((wParam & 0xFFF0) == SC_KEYMENU) // no ALT menu
 				return 0;
+			break;
+		case WM_SETCURSOR:
+			if (LOWORD(lParam) == HTCLIENT)
+			{
+				SetCursor(nullptr); // ImGui draws the cursor over the client area
+				return TRUE;
+			}
 			break;
 		case WM_CLOSE:
 			HideMenu(hwnd);
@@ -297,7 +323,8 @@ namespace
 
 			changed |= ImGui::SliderFloat("Blend", &cfg.match.blend, 0.f, 1.f, "%.2f");
 			changed |= ImGui::Checkbox("Keep each light's brightness", &cfg.match.keepBrightness);
-			changed |= ImGui::Checkbox("Also recolour nearby lamp lights (model lights)", &cfg.nearEnabled);
+			changed |= ImGui::Checkbox("Also recolour nearby lamp lights (model + entity lights)", &cfg.nearEnabled);
+			ImGui::TextDisabled("Nearby lamps take a new colour as they stream in again; LOD tiers repaint instantly.");
 			if (cfg.nearEnabled && !lodlight::NearAvailable())
 			{
 				ImGui::SameLine();
@@ -317,6 +344,22 @@ namespace
 
 			changed |= ImGui::SliderFloat("Hue window", &cfg.match.hueWindow, 0.f, 90.f, "%.0f deg");
 			changed |= ImGui::SliderFloat("Min saturation", &cfg.match.minSaturation, 0.f, 1.f, "%.2f");
+
+			ImGui::SeparatorText("Cream freeway lamps");
+			changed |= ImGui::Checkbox("Also match cream lamps (prop_streetlight_06/_08)", &cfg.match.zone2);
+			if (cfg.match.zone2)
+			{
+				float source2[3] = { cfg.source2.r / 255.f, cfg.source2.g / 255.f, cfg.source2.b / 255.f };
+				if (ImGui::ColorEdit3("Cream colour", source2))
+				{
+					cfg.source2 = lodlight::RGB{ source2[0] * 255.f, source2[1] * 255.f, source2[2] * 255.f };
+					changed = true;
+				}
+				changed |= ImGui::SliderFloat("Hue window##2", &cfg.match.hueWindow2, 0.f, 45.f, "%.0f deg");
+				changed |= ImGui::SliderFloat("Min saturation##2", &cfg.match.minSaturation2, 0.f, 1.f, "%.2f");
+				changed |= ImGui::SliderFloat("Max saturation##2", &cfg.match.maxSaturation2, 0.f, 1.f, "%.2f");
+				ImGui::TextDisabled("The saturation ceiling keeps amber runway lights out.");
+			}
 
 			if (changed)
 				Push();
@@ -377,6 +420,8 @@ namespace
 		if (!g_rtv)
 			return;
 
+		ClipCursor(nullptr); // the game re-clips the cursor to its window; keep it free while we are up
+		ImGui::GetIO().MouseDrawCursor = true;
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
@@ -430,6 +475,8 @@ namespace
 		ImGuiIO& io = ImGui::GetIO();
 		io.IniFilename = nullptr;
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange; // we handle WM_SETCURSOR ourselves
+		io.MouseDrawCursor = true;                              // always a visible cursor inside the menu
 		ImGui::StyleColorsDark();
 		ImGui::GetStyle().WindowRounding = 0.f;
 		ImGui::GetStyle().FrameRounding = 4.f;
