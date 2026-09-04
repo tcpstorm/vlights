@@ -39,9 +39,11 @@ To make a release:
 A push to `main` that does not raise `VERSION` builds but releases
 nothing, which is why the bump check exists on pull requests: every merge
 that changes the plugin is a release, and every release corresponds to
-one version. Pull requests that only touch documentation (`*.md`,
-`docs/`, `LICENSE`, the workflow files) are exempt from the bump check
-and merge without a release.
+one version. The bump check only applies when the plugin itself changes:
+anything under `src/`, `res/`, `tests/`, `third_party/`, `cmake/`, or the
+build files (`CMakeLists.txt`, `Dockerfile`, `build.ps1`, `vlights.ini`,
+`VERSION`). Pull requests that touch only docs, media, `tools/`, the
+workflows, or the licence are exempt and merge without a release.
 
 ## Pull requests
 

@@ -1,0 +1,4 @@
+# Every path is owned by the maintainer. With "Require review from Code
+# Owners" enabled in the branch ruleset for main, only an approval from an
+# owner listed here satisfies the review requirement on a pull request.
+* @tcpstorm
