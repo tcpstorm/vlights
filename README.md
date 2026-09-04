@@ -55,6 +55,11 @@ move your view.
 Press **F9** to re-read the ini without the menu. Both keys can be changed
 in the ini.
 
+The menu also tells you when a newer release is out, with a button to the
+Releases page. That's the only network access the plugin has: one request
+to GitHub at startup, off with `update_check = 0`, and it never installs
+anything on its own.
+
 **What updates instantly and what doesn't.** Far-away lights and the
 lantern glow change the moment you touch a setting. The lights that lamps
 near you cast on the ground change as those lamps stream back in: move a
@@ -74,10 +79,14 @@ is commented; the essentials:
 | `keep_brightness` | `1` | Each lamp keeps its own brightness. |
 | `hue_window`, `min_saturation` | `13`, `0.6` | How far from sodium orange a light may be and still count. |
 | `match_cream` and the `*2` keys | on | A second zone for the cream-coloured freeway lamps. |
+| `match_cool` and the `*3` keys | on | A third zone for the teal-white lamp variant. |
+| `all_streetlights` | `1` | Every light on a street-lamp model takes the target colour, whatever it was: white, teal, pale blue variants included. `0` = only sodium, cream and teal colours. |
 | `near_enabled` | `1` | Also recolour the lamps near you (needs a restart to change). |
 | `textures` | `1` | Also recolour the glowing lantern heads. |
 | `texture_names` | `streetlight, wall_light, ...` | Which textures count as lamps, by name. |
+| `texture_force` | `prop_streetlight_01_bulb` | Lens textures retinted entirely, for variants whose tint is too faint to match. |
 | `reload_key`, `menu_key` | `F9`, `F10` | Hotkeys. `0` disables one. |
+| `update_check` | `1` | Once at startup, ask GitHub whether a newer release exists and say so in the menu. Nothing is downloaded or installed. `0` = never contact anything. |
 | `debug` | `0` | Detailed logging for troubleshooting. Leave off; it costs frames. |
 
 ## Something still orange?

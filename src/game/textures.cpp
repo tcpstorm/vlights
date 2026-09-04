@@ -28,6 +28,7 @@
 #include <d3d11.h>
 #include <MinHook.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <string>
@@ -237,11 +238,32 @@ namespace vlights::textures
 				|| s.find("glow") != std::string::npos || s.find("bulb") != std::string::npos;
 		}
 
-		bool NameSelected(const std::string& name, const Config& cfg)
+		std::string LowerName(const std::string& name)
 		{
 			std::string lower = name;
 			for (char& c : lower)
 				c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+			return lower;
+		}
+
+		// Retint wholesale (texture_force), with all_streetlights on.
+		bool NameForced(const std::string& name, const Config& cfg)
+		{
+			if (!cfg.allStreetLights)
+				return false;
+			const std::string lower = LowerName(name);
+			for (const std::string& pat : cfg.textureForce)
+				if (!pat.empty() && lower.find(pat) != std::string::npos)
+					return true;
+			return false;
+		}
+
+		bool NameSelected(const std::string& name, const Config& cfg)
+		{
+			const std::string lower = LowerName(name);
+			for (const std::string& ex : cfg.textureExclude)
+				if (!ex.empty() && lower.find(ex) != std::string::npos)
+					return false;
 			for (const std::string& pat : cfg.textureNames)
 				if (!pat.empty() && lower.find(pat) != std::string::npos)
 					return true;
@@ -262,12 +284,12 @@ namespace vlights::textures
 			return static_cast<uint16_t>(((r * 31 + 127) / 255) << 11 | ((g * 63 + 127) / 255) << 5 | ((b * 31 + 127) / 255));
 		}
 
-		bool Recolour565(uint16_t& c, const MatchParams& m)
+		bool Recolour565(uint16_t& c, const MatchParams& m, bool force)
 		{
 			unsigned r, g, b;
 			Rgb565(c, r, g, b);
 			uint32_t packed = (r << 16) | (g << 8) | b;
-			if (!Recolor(packed, m))
+			if (!(force ? ForceRecolor(packed, m) : Recolor(packed, m)))
 				return false;
 			c = Pack565((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF);
 			return true;
@@ -277,14 +299,14 @@ namespace vlights::textures
 		// its mode from the endpoint order (c0 > c1: four colours; else three +
 		// transparent), so the order is preserved by swapping back and remapping
 		// the indices when a recolour flips it.
-		bool RecolourBlock(uint8_t* blk, const MatchParams& m, bool dxt1)
+		bool RecolourBlock(uint8_t* blk, const MatchParams& m, bool dxt1, bool force)
 		{
 			uint16_t c0 = *reinterpret_cast<uint16_t*>(blk);
 			uint16_t c1 = *reinterpret_cast<uint16_t*>(blk + 2);
 			const bool fourColour = c0 > c1;
 			uint16_t n0 = c0, n1 = c1;
-			const bool ch0 = Recolour565(n0, m);
-			const bool ch1 = Recolour565(n1, m);
+			const bool ch0 = Recolour565(n0, m, force);
+			const bool ch1 = Recolour565(n1, m, force);
 			if (!ch0 && !ch1)
 				return false;
 			if (dxt1)
@@ -322,7 +344,7 @@ namespace vlights::textures
 
 		// Recolour `levels` mips of pixel data in place. Returns blocks/pixels
 		// changed.
-		long RecolourPixels(uint8_t* px, size_t avail, Fmt kind, unsigned w, unsigned h, unsigned levels, const MatchParams& m)
+		long RecolourPixels(uint8_t* px, size_t avail, Fmt kind, unsigned w, unsigned h, unsigned levels, const MatchParams& m, bool force = false)
 		{
 			long changed = 0;
 			size_t off = 0;
@@ -339,7 +361,7 @@ namespace vlights::textures
 					const size_t bs = BlockBytes(kind);
 					const size_t colourOff = dxt1 ? 0 : 8;
 					for (size_t b = 0; b < bytes / bs; ++b)
-						if (RecolourBlock(px + off + b * bs + colourOff, m, dxt1))
+						if (RecolourBlock(px + off + b * bs + colourOff, m, dxt1, force))
 							changed++;
 				}
 				else
@@ -350,7 +372,7 @@ namespace vlights::textures
 						uint8_t* q = px + off + i * 4;
 						const unsigned rr = bgra ? q[2] : q[0], gg = q[1], bb = bgra ? q[0] : q[2];
 						uint32_t packed = (rr << 16) | (gg << 8) | bb;
-						if (!Recolor(packed, m))
+						if (!(force ? ForceRecolor(packed, m) : Recolor(packed, m)))
 							continue;
 						const uint8_t nr = (packed >> 16) & 0xFF, ng = (packed >> 8) & 0xFF, nb = packed & 0xFF;
 						if (bgra) { q[2] = nr; q[1] = ng; q[0] = nb; } else { q[0] = nr; q[1] = ng; q[2] = nb; }
@@ -387,6 +409,7 @@ namespace vlights::textures
 			std::string name;
 			Fmt kind = Fmt::Unknown;
 			unsigned w = 0, h = 0, levels = 0;
+			bool force = false;              // texture_force: every pixel retinted
 			std::vector<uint8_t> original;   // all mips, untouched
 			uint64_t placedHash = 0;         // pixels the game's GPU texture was built from
 			uint64_t shownHash = 0;          // pixels currently on screen
@@ -607,7 +630,7 @@ namespace vlights::textures
 				// plugin is disabled, otherwise the originals recoloured anew.
 				work = r.original;
 				if (paint)
-					RecolourPixels(work.data(), work.size(), r.kind, r.w, r.h, r.levels, cfg.match);
+					RecolourPixels(work.data(), work.size(), r.kind, r.w, r.h, r.levels, cfg.match, r.force && cfg.allStreetLights);
 				const uint64_t wanted = HashBytes(work.data(), work.size());
 				if (wanted == r.shownHash)
 				{
@@ -739,6 +762,46 @@ namespace vlights::textures
 			out.swap(uniq);
 		}
 
+		// Debug: the most common block-endpoint colours of mip 0, so a selected
+		// texture that matched nothing can be read in RGB/HSV from the log.
+		std::string EndpointHistogram(const uint8_t* px, size_t avail, Fmt kind, unsigned w, unsigned h)
+		{
+			if (!IsBlock(kind))
+				return "";
+			const size_t bs = BlockBytes(kind);
+			const size_t colourOff = kind == Fmt::DXT1 ? 0 : 8;
+			size_t pitch;
+			const size_t bytes = LevelBytes(kind, w, h, pitch);
+			if (bytes > avail)
+				return "";
+			struct Bin { uint16_t c; unsigned n; };
+			std::vector<Bin> bins;
+			for (size_t b = 0; b < bytes / bs; ++b)
+			{
+				for (int k = 0; k < 2; ++k)
+				{
+					const uint16_t c = *reinterpret_cast<const uint16_t*>(px + b * bs + colourOff + k * 2);
+					bool found = false;
+					for (Bin& bin : bins)
+						if (bin.c == c) { bin.n++; found = true; break; }
+					if (!found && bins.size() < 512)
+						bins.push_back({ c, 1 });
+				}
+			}
+			std::sort(bins.begin(), bins.end(), [](const Bin& a, const Bin& b) { return a.n > b.n; });
+			std::string out;
+			char buf[64];
+			for (size_t i = 0; i < bins.size() && i < 6; ++i)
+			{
+				unsigned r, g, bl;
+				Rgb565(bins[i].c, r, g, bl);
+				const HSV hsv = ToHSV(RGB{ float(r), float(g), float(bl) });
+				snprintf(buf, sizeof(buf), " (%u,%u,%u h%.0f s%.2f)x%u", r, g, bl, hsv.h, hsv.s, bins[i].n);
+				out += buf;
+			}
+			return out;
+		}
+
 		struct TexResult
 		{
 			std::string name;
@@ -747,6 +810,7 @@ namespace vlights::textures
 			bool handled = true;
 			bool registered = false;
 			long changed = 0;
+			std::string histogram; // debug, only when nothing changed
 		};
 
 		// Recolour one texture in the raw resource and register it for live
@@ -765,7 +829,8 @@ namespace vlights::textures
 				return r;
 			}
 			r.name = ReadName(map, namePtr);
-			if (!NameSelected(r.name, cfg))
+			const bool force = NameForced(r.name, cfg);
+			if (!force && !NameSelected(r.name, cfg))
 				return r;
 			r.selected = true;
 			const Fmt kind = Classify(fmt, r.fmt);
@@ -789,12 +854,14 @@ namespace vlights::textures
 			if (keep)
 				original.assign(px, px + bytes);
 
-			r.changed = RecolourPixels(px, bytes, kind, w, h, levels, cfg.match);
+			r.changed = RecolourPixels(px, bytes, kind, w, h, levels, cfg.match, force);
 			if (r.changed)
 			{
 				g_texturesRecoloured++;
 				g_blocksRecoloured += r.changed;
 			}
+			else if (cfg.debug)
+				r.histogram = EndpointHistogram(px, bytes, kind, w, h);
 
 			if (keep)
 			{
@@ -811,6 +878,7 @@ namespace vlights::textures
 					reg.w = w;
 					reg.h = h;
 					reg.levels = levels;
+					reg.force = force;
 					reg.placedHash = HashBytes(px, bytes);
 					reg.shownHash = reg.placedHash;
 					reg.original = std::move(original);
@@ -858,8 +926,9 @@ namespace vlights::textures
 				{
 					any = true;
 					if (cfg.debug)
-						Log("tex: %s slot %u '%s' %s: %ld blocks recoloured%s%s", g_hooks[kind].name, object, r.name.c_str(), r.fmt.c_str(), r.changed,
-							r.handled ? "" : " (format not handled)", r.registered ? "" : " (not registered for live repaint)");
+						Log("tex: %s slot %u '%s' %s: %ld blocks recoloured%s%s%s%s", g_hooks[kind].name, object, r.name.c_str(), r.fmt.c_str(), r.changed,
+							r.handled ? "" : " (format not handled)", r.registered ? "" : " (not registered for live repaint)",
+							r.histogram.empty() ? "" : "; top colours:", r.histogram.c_str());
 				}
 				else if (cfg.debug && kind == Txd)
 				{
