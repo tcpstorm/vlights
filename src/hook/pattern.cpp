@@ -33,6 +33,34 @@ namespace lodlight
 		return !out.bytes.empty();
 	}
 
+	int GameBuild()
+	{
+		static int cached = -1;
+		if (cached >= 0)
+			return cached;
+		cached = 0;
+		wchar_t path[MAX_PATH];
+		DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH);
+		for (DWORD i = 0; i + 2 < n; ++i)
+		{
+			if (path[i] == L'_' && path[i + 1] == L'b' && path[i + 2] >= L'0' && path[i + 2] <= L'9')
+			{
+				int v = 0;
+				for (DWORD j = i + 2; j < n && path[j] >= L'0' && path[j] <= L'9'; ++j)
+					v = v * 10 + (path[j] - L'0');
+				cached = v;
+				break;
+			}
+		}
+		return cached;
+	}
+
+	int StreamingVtableShift()
+	{
+		const int b = GameBuild();
+		return (b == 0 || b >= 2802) ? 6 : 0;
+	}
+
 	bool GetMainModuleRange(uintptr_t& base, size_t& size)
 	{
 		HMODULE mod = GetModuleHandleW(nullptr);

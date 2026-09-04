@@ -54,6 +54,7 @@ Desktop.ini
 
 # ---- scratch: screenshots, notes, local experiments ---------------------------
 exclude/
+ignore/
 scratch/
 *.png
 *.jpg

@@ -94,13 +94,26 @@ namespace lodlight
 	// Matching is done in hue/saturation so it is brightness-invariant: a dim
 	// sodium light and a bright one both match, while yellow (hue 60), red
 	// (hue 0) and anything desaturated (white/grey) do not.
+	// Two match zones. Zone 1 is sodium: tight hue window, high saturation
+	// (vanilla lamps decode to hue 17-33, saturation 0.75-1.0). Zone 2 is
+	// the cream freeway lamps (prop_streetlight_06/_08 carry (255,227,166):
+	// hue 41, saturation 0.35): a narrow hue window with a saturation
+	// *ceiling*, so the amber runway edge lights at hue 44 / saturation 0.99
+	// stay out, as do cream-white wall lights at saturation 0.07-0.21.
 	struct MatchParams
 	{
 		bool enabled = true;
 		float sourceHue = 29.7f;     // hue of the sodium reference (255,147,41)
-		float hueWindow = 13.f;      // degrees either side of sourceHue; vanilla sodium spans hue 17-30, amber runway lights sit at 44
-		float minSaturation = 0.6f;  // vanilla sodium is 0.75-1.0; warm signage sits at 0.35-0.6
+		float hueWindow = 13.f;      // degrees either side of sourceHue
+		float minSaturation = 0.6f;
 		float minValue = 0.05f;      // below this it is black, leave alone
+
+		bool zone2 = true;
+		float source2Hue = 41.1f;    // hue of (255,227,166)
+		float hueWindow2 = 14.f;     // 27..55: cream freeway lamps (41) and the pale-yellow map-piece street lights downtown (48..55)
+		float minSaturation2 = 0.3f;
+		float maxSaturation2 = 0.7f; // runway (0.99) and car-park amber (0.93) stay out; downtown pieces are 0.36
+
 		RGB target{ 235.f, 240.f, 255.f };
 		float blend = 1.f;           // 1 = replace, 0 = untouched
 		bool keepBrightness = true;  // scale target to the light's original V
@@ -113,9 +126,12 @@ namespace lodlight
 			*outHsv = hsv;
 		if (hsv.v < p.minValue)
 			return false;
-		if (hsv.s < p.minSaturation)
-			return false;
-		return HueDistance(hsv.h, p.sourceHue) <= p.hueWindow;
+		if (hsv.s >= p.minSaturation && HueDistance(hsv.h, p.sourceHue) <= p.hueWindow)
+			return true;
+		if (p.zone2 && hsv.s >= p.minSaturation2 && hsv.s <= p.maxSaturation2
+			&& HueDistance(hsv.h, p.source2Hue) <= p.hueWindow2)
+			return true;
+		return false;
 	}
 
 	// Returns the recoloured value for a matching light, or the input unchanged.

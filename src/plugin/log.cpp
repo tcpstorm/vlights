@@ -1,43 +1,70 @@
 #include "plugin/log.h"
 
 #include <windows.h>
+#include <atomic>
 #include <cstdarg>
 #include <cstdio>
 
 namespace lodlight
 {
-	static SRWLOCK g_lock = SRWLOCK_INIT;
-	static std::wstring g_path;
+	namespace
+	{
+		SRWLOCK g_lock = SRWLOCK_INIT;
+		FILE* g_file = nullptr;
+		std::atomic<bool> g_debug{ false };
+
+		void Write(const char* fmt, va_list ap)
+		{
+			char msg[2048];
+			vsnprintf(msg, sizeof(msg), fmt, ap);
+
+			SYSTEMTIME t;
+			GetLocalTime(&t);
+
+			AcquireSRWLockExclusive(&g_lock);
+			if (g_file)
+			{
+				fprintf(g_file, "[%02u:%02u:%02u.%03u] %s\n", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds, msg);
+				fflush(g_file);
+			}
+			ReleaseSRWLockExclusive(&g_lock);
+		}
+	}
 
 	void LogInit(const std::wstring& path)
 	{
 		AcquireSRWLockExclusive(&g_lock);
-		g_path = path;
-		if (FILE* f = _wfopen(g_path.c_str(), L"w"))
-			fclose(f);
+		if (g_file)
+			fclose(g_file);
+		g_file = _wfopen(path.c_str(), L"w");
 		ReleaseSRWLockExclusive(&g_lock);
 	}
 
 	void Log(const char* fmt, ...)
 	{
-		char msg[2048];
 		va_list ap;
 		va_start(ap, fmt);
-		vsnprintf(msg, sizeof(msg), fmt, ap);
+		Write(fmt, ap);
 		va_end(ap);
+	}
 
-		SYSTEMTIME t;
-		GetLocalTime(&t);
+	void LogDebug(const char* fmt, ...)
+	{
+		if (!g_debug.load(std::memory_order_relaxed))
+			return;
+		va_list ap;
+		va_start(ap, fmt);
+		Write(fmt, ap);
+		va_end(ap);
+	}
 
-		AcquireSRWLockExclusive(&g_lock);
-		if (!g_path.empty())
-		{
-			if (FILE* f = _wfopen(g_path.c_str(), L"a"))
-			{
-				fprintf(f, "[%02u:%02u:%02u.%03u] %s\n", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds, msg);
-				fclose(f);
-			}
-		}
-		ReleaseSRWLockExclusive(&g_lock);
+	void SetDebugLogging(bool on)
+	{
+		g_debug = on;
+	}
+
+	bool DebugLogging()
+	{
+		return g_debug.load(std::memory_order_relaxed);
 	}
 }

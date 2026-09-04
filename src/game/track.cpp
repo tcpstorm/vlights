@@ -1,8 +1,11 @@
 #include "game/track.h"
+#include "hook/pattern.h"
 #include "plugin/log.h"
 
 #include <windows.h>
 #include <MinHook.h>
+
+#include <atomic>
 
 #include <cstdio>
 #include <string>
@@ -48,7 +51,7 @@ namespace lodlight::track
 		uintptr_t g_base = 0;
 		size_t g_size = 0;
 
-		const char* kNames[KindCount] = { "ymap", "ydr", "yft", "ydd" };
+		const char* kNames[KindCount] = { "ymap", "ydr", "yft", "ydd", "ytyp" };
 
 		const PoolBase* Pool(void* store)
 		{
@@ -88,15 +91,24 @@ namespace lodlight::track
 			return *reinterpret_cast<const uint32_t*>(entry + kEntryNameHashOffset) == e.nameHash;
 		}
 
+		std::atomic<uint64_t> g_removeCalls{ 0 };
+		std::atomic<uint64_t> g_removeDropped{ 0 };
+
 		void HandleRemove(void* store, uint32_t id)
 		{
+			const uint64_t call = ++g_removeCalls;
+			bool dropped = false;
 			AcquireSRWLockExclusive(&g_lock);
 			for (int k = 0; k < KindCount; ++k)
 			{
 				if (g_stores[k].store == store)
-					g_stores[k].entries.erase(id);
+					dropped |= g_stores[k].entries.erase(id) != 0;
 			}
 			ReleaseSRWLockExclusive(&g_lock);
+			if (dropped)
+				g_removeDropped++;
+			if (call <= 5 || (dropped && g_removeDropped <= 5))
+				LogDebug("remove: store %p id %u%s (call %llu)", store, id, dropped ? " -> dropped from registry" : "", (unsigned long long)call);
 		}
 
 		template <int K>
@@ -113,7 +125,8 @@ namespace lodlight::track
 			case 0: return reinterpret_cast<void*>(&RemoveThunk<0>);
 			case 1: return reinterpret_cast<void*>(&RemoveThunk<1>);
 			case 2: return reinterpret_cast<void*>(&RemoveThunk<2>);
-			default: return reinterpret_cast<void*>(&RemoveThunk<3>);
+			case 3: return reinterpret_cast<void*>(&RemoveThunk<3>);
+			default: return reinterpret_cast<void*>(&RemoveThunk<4>);
 			}
 		}
 
@@ -126,12 +139,13 @@ namespace lodlight::track
 			if (st.removeFailed)
 				return false;
 
+			const int slot = 3 + StreamingVtableShift(); // strStreamingModule::Remove
 			void** vt = *static_cast<void***>(store);
-			void* fn = vt[3];
+			void* fn = vt[slot];
 			uintptr_t a = reinterpret_cast<uintptr_t>(fn);
 			if (a < g_base || a >= g_base + g_size)
 			{
-				Log("%s store vtable slot 3 = %p is outside the game image; live repaint disabled for it", kNames[k], fn);
+				Log("%s store vtable slot %d = %p is outside the game image; live repaint disabled for it", kNames[k], slot, fn);
 				st.removeFailed = true;
 				return false;
 			}
@@ -155,8 +169,8 @@ namespace lodlight::track
 
 			st.removeHooked = true;
 			const PoolBase* pool = Pool(store);
-			Log("%s store %p: Remove at %p (base+0x%llX) detoured; pool count=%u entrySize=%u",
-				kNames[k], store, fn, (unsigned long long)(a - g_base), pool->count, pool->entrySize);
+			Log("%s store %p: Remove (vtable slot %d) at %p (base+0x%llX) detoured; pool count=%u entrySize=%u",
+				kNames[k], store, slot, fn, (unsigned long long)(a - g_base), pool->count, pool->entrySize);
 			return true;
 		}
 	}
@@ -244,6 +258,27 @@ namespace lodlight::track
 		}
 		ReleaseSRWLockExclusive(&g_lock);
 		return t;
+	}
+
+	void ForEachLoaded(Kind k, VisitFn fn, void* user)
+	{
+		AcquireSRWLockShared(&g_lock);
+		StoreState& st = g_stores[k];
+		if (st.store)
+		{
+			for (auto& kv : st.entries)
+			{
+				if (SlotLive(st, kv.first, kv.second))
+					fn(kv.second.obj, kv.first, user);
+			}
+		}
+		ReleaseSRWLockShared(&g_lock);
+	}
+
+	void RemoveStats(uint64_t& calls, uint64_t& dropped)
+	{
+		calls = g_removeCalls.load();
+		dropped = g_removeDropped.load();
 	}
 
 	uint64_t CountLoaded()

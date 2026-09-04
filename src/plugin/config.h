@@ -9,6 +9,8 @@ namespace lodlight
 	{
 		MatchParams match;
 		RGB source{ 255.f, 147.f, 41.f }; // sourceHue is derived from this
+		RGB source2{ 255.f, 227.f, 166.f }; // cream freeway lamps; source2Hue is derived from this
+		bool debug = false;               // master switch for all per-object logging below
 		int logSamples = 0;               // log the first N raw entries seen
 		bool logBlocks = false;           // one line per map data block
 		int reloadKey = 0x78;             // VK_F9
@@ -16,6 +18,9 @@ namespace lodlight
 		bool liveRepaint = true;          // remember loaded objects for instant repaint
 		bool nearEnabled = true;          // also recolour model (near-tier) lights
 		bool nearLog = false;             // log every model with lights
+		bool nearSweep = true;
+		float probeX = 0.f, probeY = 0.f; // debug: F9 dumps map entities / LOD lights near this point
+		float probeRadius = 25.f;
 	};
 
 	// Full ini text (with comments) for the given values. DefaultIniText()

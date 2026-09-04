@@ -73,6 +73,15 @@ int main()
 		CHECK(!Matches(RGB{ 0.f, 0.f, 255.f }, p));     // blue
 		CHECK(!Matches(RGB{ 5.f, 3.f, 1.f }, p));       // basically black
 		CHECK(!Matches(RGB{ 255.f, 220.f, 190.f }, p)); // warm white, low sat
+		CHECK(Matches(RGB{ 255.f, 227.f, 166.f }, p));  // cream freeway lamp: zone 2
+		CHECK(!Matches(RGB{ 255.f, 188.f, 2.f }, p));   // amber runway light: hue 44 but saturation 0.99
+		CHECK(!Matches(RGB{ 255.f, 247.f, 201.f }, p)); // cream-white wall light: saturation 0.21
+		CHECK(Matches(RGB{ 255.f, 162.f, 52.f }, p));   // prop_streetlight_05: hue 32.5, zone 1
+		{
+			MatchParams noCream = p;
+			noCream.zone2 = false;
+			CHECK(!Matches(RGB{ 255.f, 227.f, 166.f }, noCream));
+		}
 
 		p.enabled = false;
 		uint32_t v = 0x80FF9329u;

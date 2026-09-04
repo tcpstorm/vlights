@@ -56,24 +56,43 @@ namespace lodlight
 		s += "hue_window = " + FloatText(cfg.match.hueWindow) + "\n";
 		s += "min_saturation = " + FloatText(cfg.match.minSaturation) + "\n";
 		s += "\n";
+		s += "# Second match zone for the cream freeway lamps (prop_streetlight_06/_08,\n";
+		s += "# light colour 255 227 166: hue 41, saturation 0.35). A saturation ceiling\n";
+		s += "# keeps amber runway lights (hue 44, saturation 0.99) out of it.\n";
+		s += "match_cream = " + std::string(cfg.match.zone2 ? "1" : "0") + "\n";
+		s += "source2 = " + ColorText(cfg.source2) + "\n";
+		s += "hue_window2 = " + FloatText(cfg.match.hueWindow2) + "\n";
+		s += "min_saturation2 = " + FloatText(cfg.match.minSaturation2) + "\n";
+		s += "max_saturation2 = " + FloatText(cfg.match.maxSaturation2) + "\n";
+		s += "\n";
 		s += "# blend: 1 = replace with target, 0.5 = halfway, 0 = leave untouched.\n";
 		s += "blend = " + FloatText(cfg.match.blend) + "\n";
 		s += "# keep_brightness: scale target so each light keeps its own brightness\n";
 		s += "# instead of every light becoming identical.\n";
 		s += "keep_brightness = " + std::string(cfg.match.keepBrightness ? "1" : "0") + "\n";
 		s += "\n";
-		s += "# near_enabled: also recolour the lights baked into lamp-post models (the\n";
-		s += "# near tier), using the same match and target. 0 = LOD/distant lights only.\n";
-		s += "# Takes effect at game start (hooks are installed then).\n";
+		s += "# near_enabled: also recolour near-tier lights (the light definitions baked\n";
+		s += "# into lamp-post models and the per-entity light overrides stored in map\n";
+		s += "# blocks), using the same match and target. 0 = LOD/distant lights only.\n";
+		s += "# Takes effect at game start (hooks are installed then). Near lights take\n";
+		s += "# a new colour as they stream in again, not instantly.\n";
 		s += "near_enabled = " + std::string(cfg.nearEnabled ? "1" : "0") + "\n";
 		s += "\n";
 		s += "# Diagnostics (written to lodlight_recolor.log next to the .asi).\n";
+		s += "# debug: master switch. With 0 nothing below is logged during play, whatever\n";
+		s += "# the individual keys say. Leave at 0 unless investigating: per-object\n";
+		s += "# logging costs frame time while models stream in.\n";
+		s += "debug = " + std::string(cfg.debug ? "1" : "0") + "\n";
 		s += "# log_samples: log the first N raw entries seen, with their decoded\n";
 		s += "# colour. log_blocks: one line per map data block with counts.\n";
 		s += "log_samples = " + std::to_string(cfg.logSamples) + "\n";
 		s += "log_blocks = " + std::string(cfg.logBlocks ? "1" : "0") + "\n";
-		s += "# near_log: one line per model that has lights (name, count, first colour).\n";
+		s += "# near_log: one line per model / map block that has lights, with colours.\n";
 		s += "near_log = " + std::string(cfg.nearLog ? "1" : "0") + "\n";
+		s += "# probe: 'x y radius'. With debug on, every map block that streams in is\n";
+		s += "# scanned and its entities / LOD lights within radius of that world point\n";
+		s += "# are logged (model hash, extensions, original colour). 0 0 = off.\n";
+		s += "probe = " + FloatText(cfg.probeX) + " " + FloatText(cfg.probeY) + " " + FloatText(cfg.probeRadius) + "\n";
 		s += "\n";
 		s += "# Hotkeys: F1-F24, or a hex/decimal virtual-key code. 0 disables.\n";
 		s += "# reload_key re-reads this file and repaints loaded lights.\n";
@@ -231,8 +250,14 @@ namespace lodlight
 			else if (key == "target")         ok = ParseColor(val, cfg.match.target);
 			else if (key == "hue_window")     ok = ParseFloat(val, cfg.match.hueWindow);
 			else if (key == "min_saturation") ok = ParseFloat(val, cfg.match.minSaturation);
+			else if (key == "match_cream")    ok = ParseBool(val, cfg.match.zone2);
+			else if (key == "source2")        ok = ParseColor(val, cfg.source2);
+			else if (key == "hue_window2")    ok = ParseFloat(val, cfg.match.hueWindow2);
+			else if (key == "min_saturation2") ok = ParseFloat(val, cfg.match.minSaturation2);
+			else if (key == "max_saturation2") ok = ParseFloat(val, cfg.match.maxSaturation2);
 			else if (key == "blend")          ok = ParseFloat(val, cfg.match.blend);
 			else if (key == "keep_brightness") ok = ParseBool(val, cfg.match.keepBrightness);
+			else if (key == "debug")          ok = ParseBool(val, cfg.debug);
 			else if (key == "log_samples")    ok = ParseInt(val, cfg.logSamples);
 			else if (key == "log_blocks")     ok = ParseBool(val, cfg.logBlocks);
 			else if (key == "reload_key")     ok = ParseKey(val, cfg.reloadKey);
@@ -240,6 +265,17 @@ namespace lodlight
 			else if (key == "live_repaint")   ok = ParseBool(val, cfg.liveRepaint);
 			else if (key == "near_enabled")   ok = ParseBool(val, cfg.nearEnabled);
 			else if (key == "near_log")       ok = ParseBool(val, cfg.nearLog);
+			else if (key == "probe")
+			{
+				std::string t = val;
+				std::replace(t.begin(), t.end(), ',', ' ');
+				char* end = nullptr;
+				float x = std::strtof(t.c_str(), &end);
+				float y = std::strtof(end, &end);
+				float r = std::strtof(end, &end);
+				ok = end != t.c_str();
+				if (ok) { cfg.probeX = x; cfg.probeY = y; cfg.probeRadius = r > 0.f ? r : 25.f; }
+			}
 			else
 			{
 				report += "line " + std::to_string(lineNo) + ": unknown key '" + key + "'\n";
@@ -250,6 +286,10 @@ namespace lodlight
 		}
 
 		cfg.match.sourceHue = ToHSV(cfg.source).h;
+		cfg.match.source2Hue = ToHSV(cfg.source2).h;
+		cfg.match.hueWindow2 = std::clamp(cfg.match.hueWindow2, 0.f, 180.f);
+		cfg.match.minSaturation2 = std::clamp(cfg.match.minSaturation2, 0.f, 1.f);
+		cfg.match.maxSaturation2 = std::clamp(cfg.match.maxSaturation2, 0.f, 1.f);
 		cfg.match.hueWindow = std::clamp(cfg.match.hueWindow, 0.f, 180.f);
 		cfg.match.minSaturation = std::clamp(cfg.match.minSaturation, 0.f, 1.f);
 		cfg.match.blend = std::clamp(cfg.match.blend, 0.f, 1.f);
