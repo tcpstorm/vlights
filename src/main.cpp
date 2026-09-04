@@ -22,6 +22,7 @@
 #include "plugin/log.h"
 #include "plugin/plugin.h"
 #include "plugin/update.h"
+#include "plugin/timing.h"
 
 #include <windows.h>
 
@@ -76,6 +77,19 @@ namespace
 					uint64_t rmCalls = 0, rmDropped = 0;
 					vlights::track::RemoveStats(rmCalls, rmDropped);
 					vlights::Log("unload detour: fired %llu times, dropped %llu tracked slots", (unsigned long long)rmCalls, (unsigned long long)rmDropped);
+					{
+						std::string t;
+						char buf[128];
+						for (int h = 0; h < vlights::timing::HookCount; ++h)
+						{
+							const vlights::timing::Counter& c = vlights::timing::Get(static_cast<vlights::timing::Hook>(h));
+							const uint64_t calls = c.calls.load();
+							snprintf(buf, sizeof(buf), " %s: %llu calls, %.1f ms total, %.0f us avg, %.0f us max;", vlights::timing::Name(static_cast<vlights::timing::Hook>(h)),
+								(unsigned long long)calls, vlights::timing::Ms(c.ticks.load()), calls ? vlights::timing::Us(c.ticks.load()) / calls : 0.0, vlights::timing::Us(c.maxTicks.load()));
+							t += buf;
+						}
+						vlights::Log("hook time:%s", t.c_str());
+					}
 					vlights::Log("unmatched warm light colours so far:%s", vlights::nearlights::UnmatchedWarmSummary().c_str());
 					vlights::Log("textures: %llu resources placed, %llu with selected textures, %llu textures recoloured (%llu blocks); %llu registered for live repaint", (unsigned long long)vlights::textures::Placements(), (unsigned long long)vlights::textures::Dictionaries(), (unsigned long long)vlights::textures::TexturesRecoloured(), (unsigned long long)vlights::textures::BlocksRecoloured(), (unsigned long long)vlights::textures::Registered());
 					if (vlights::ReloadConfigFromDisk("hotkey"))

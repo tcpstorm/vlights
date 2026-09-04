@@ -127,6 +127,17 @@ Dockerfile, build.ps1   the build
   not.** Probe pointers, check the store's pool, drop entries that fail.
 - **Log what a future debugging session will need**, behind `debug`, and
   keep the always-on log to startup, hook installation, F9 and failures.
+- **Hook paths take the shared config snapshot** (`GetConfigPtr()`), never
+  a copy: the config carries string lists, and the placement hook runs
+  thousands of times a session. Per-object work is cached where the
+  answer cannot change (extension type per vtable, the lamp hash set per
+  config snapshot). `hook time:` on F9 is the measurement. Reference
+  numbers from a five-minute drive and flight through Los Santos on
+  0.21.1: map blocks 659 calls, 6.7 ms in total, worst 0.4 ms; models
+  2817 calls, 27 ms, worst 0.5 ms (both on the main thread); placement
+  3721 calls, 118 ms, worst 4.3 ms (a large lens texture, on a streaming
+  thread, never the render thread); a live repaint about 11 ms on the
+  worker thread. Nothing runs per frame.
 - **A fork of the FiveM client is not the way to ship this.** Its CI clones
   private repos, the anti-cheat component is private (public builds get a
   stub), and the build is Windows-only with a large toolchain.

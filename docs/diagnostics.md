@@ -34,6 +34,12 @@ config (hotkey): ...
   not, the light comes from a source the plugin does not read.
 - `textures: ... 0 with selected textures` after driving past lamps means
   the placement hook did not install; look for the `tex:` lines at start.
+- `hook time:` is the cost on the game's threads: per hook, calls, total
+  milliseconds, average and worst microseconds. Map blocks and models run
+  on the main thread as things stream in; placement on a streaming thread;
+  repaint on the worker thread. A session's total in the tens of
+  milliseconds is the expected order; a worst case in the milliseconds
+  points at something to look at.
 
 ## Startup lines worth knowing
 

@@ -23,6 +23,7 @@
 #include "plugin/config.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
+#include "plugin/timing.h"
 
 #include <windows.h>
 #include <d3d11.h>
@@ -588,7 +589,8 @@ namespace vlights::textures
 		// thread.
 		void RepaintAll()
 		{
-			const Config cfg = GetConfig();
+			const ConfigPtr cfgPtr = GetConfigPtr();
+			const Config& cfg = *cfgPtr;
 			const bool paint = cfg.texturesEnabled && cfg.match.enabled;
 			unsigned rebuilt = 0, restored = 0, skipped = 0, failed = 0;
 			std::vector<uint8_t> work;
@@ -893,8 +895,10 @@ namespace vlights::textures
 
 		void OnPlace(StoreKind kind, uint32_t object, void* blockMap)
 		{
+			timing::Scope timed(timing::Placement);
 			const uint64_t n = ++g_placements;
-			const Config cfg = GetConfig();
+			const ConfigPtr cfgPtr = GetConfigPtr();
+			const Config& cfg = *cfgPtr;
 			if (!cfg.texturesEnabled || !cfg.match.enabled)
 				return;
 			Map map;

@@ -7,6 +7,7 @@
 #include <vlights/version.h>
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 
@@ -29,7 +30,11 @@ namespace vlights
 	// --- plugin.cpp ---
 	void SetConfigPath(const std::wstring& path);
 	const std::wstring& ConfigPath();
-	Config GetConfig();                        // snapshot
+	Config GetConfig();                        // snapshot by value (menu, startup)
+	// Shared snapshot for the hook paths: no string copies per map block,
+	// model or texture placement. Replaced wholesale by SetConfig.
+	using ConfigPtr = std::shared_ptr<const Config>;
+	ConfigPtr GetConfigPtr();
 	void SetConfig(const Config& cfg);         // replace; recomputes derived fields
 	bool ReloadConfigFromDisk(const char* why);
 	bool SaveConfigToDisk(std::string& error);
