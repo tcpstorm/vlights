@@ -55,6 +55,11 @@ move your view.
 Press **F9** to re-read the ini without the menu. Both keys can be changed
 in the ini.
 
+The menu also tells you when a newer release is out, with a button to the
+Releases page. That's the only network access the plugin has: one request
+to GitHub at startup, off with `update_check = 0`, and it never installs
+anything on its own.
+
 **What updates instantly and what doesn't.** Far-away lights and the
 lantern glow change the moment you touch a setting. The lights that lamps
 near you cast on the ground change as those lamps stream back in: move a
@@ -81,6 +86,7 @@ is commented; the essentials:
 | `texture_names` | `streetlight, wall_light, ...` | Which textures count as lamps, by name. |
 | `texture_force` | `prop_streetlight_01_bulb` | Lens textures retinted entirely, for variants whose tint is too faint to match. |
 | `reload_key`, `menu_key` | `F9`, `F10` | Hotkeys. `0` disables one. |
+| `update_check` | `1` | Once at startup, ask GitHub whether a newer release exists and say so in the menu. Nothing is downloaded or installed. `0` = never contact anything. |
 | `debug` | `0` | Detailed logging for troubleshooting. Leave off; it costs frames. |
 
 ## Something still orange?

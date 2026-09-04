@@ -40,6 +40,7 @@ namespace vlights
 		float probeX = 0.f, probeY = 0.f; // debug: F9 dumps map entities / LOD lights near this point
 		float probeRadius = 25.f;
 		bool texturesEnabled = true;      // recolour lamp glow textures at load
+		bool updateCheck = true;          // one GET of the latest GitHub release at startup; notice in the menu
 		std::vector<std::string> textureNames{ "streetlight", "wall_light", "lamppost", "lamp_post", "ind_light", "oldlight" }; // lowercase substrings selecting textures
 	};
 

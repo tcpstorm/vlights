@@ -62,6 +62,7 @@ add_library(VLights SHARED
         src/main.cpp
         src/plugin/plugin.cpp
         src/plugin/config.cpp
+        src/plugin/update.cpp
         src/plugin/log.cpp
         src/hook/pattern.cpp
         src/game/lod_lights.cpp
@@ -72,7 +73,7 @@ add_library(VLights SHARED
         res/VLights.rc
         ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
     target_include_directories(VLights PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/generated)
-    target_link_libraries(VLights PRIVATE minhook imgui)
+    target_link_libraries(VLights PRIVATE minhook imgui winhttp shell32)
     target_compile_definitions(VLights PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
     set_target_properties(VLights PROPERTIES PREFIX "" SUFFIX ".asi")
 
