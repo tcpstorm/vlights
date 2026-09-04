@@ -1,0 +1,65 @@
+name: Crash or hang
+description: FiveM crashed, showed an error naming vlights.asi, or hung while loading with the plugin installed.
+title: "[Crash] "
+labels: ["crash"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A crash report is worth a lot here: with the offset from FiveM's dialog and the startup lines from the log, the function that failed can usually be named without a reproduction.
+  - type: textarea
+    id: dialog
+    attributes:
+      label: FiveM's error dialog
+      description: Paste the whole text (Ctrl-C copies it). The crash signature line and the stack trace matter most, whether or not they mention vlights.asi.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: VLights version and game build
+      description: First line of `vlights.log`.
+      placeholder: "VLights 0.21.0, game build 3751"
+    validations:
+      required: true
+  - type: textarea
+    id: doing
+    attributes:
+      label: What you were doing
+      description: Loading in, driving, flying, changing a colour in the menu, pressing F9, joining a server...
+    validations:
+      required: true
+  - type: dropdown
+    id: repeat
+    attributes:
+      label: Does it happen again
+      options:
+        - Every time
+        - Often
+        - Once so far
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: vlights.log
+      description: |
+        Attach or paste the log from the session that crashed. The startup lines (every line up to and including the `store ... detoured` ones) are essential; the rest helps.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where were you playing
+      options:
+        - Story mode
+        - A server
+    validations:
+      required: true
+  - type: textarea
+    id: other
+    attributes:
+      label: Other plugins or mods
+      description: Anything else in `FiveM.app\plugins\` or `mods\`, and whether the crash still happens with only VLights installed.

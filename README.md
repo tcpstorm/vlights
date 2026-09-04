@@ -117,6 +117,13 @@ for changes to game hooks are in `CONTRIBUTING.md`.
 hooked, the FiveM and engine behaviour that shaped the design, the
 diagnostics, and the development notes. Start at `docs/README.md`.
 
+## Contributing and reports
+
+Wrong colour, crash, or an idea: open an issue; the templates ask for what
+each kind of report needs. Changes are welcome as pull requests, see
+`CONTRIBUTING.md`. Everyone taking part is expected to follow the
+`CODE_OF_CONDUCT.md`; anything security-related goes through `SECURITY.md`.
+
 ## Licence
 
 MIT, see `LICENSE`. Bundles MinHook (BSD 2-Clause) and Dear ImGui (MIT)

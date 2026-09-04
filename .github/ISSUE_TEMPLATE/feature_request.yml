@@ -1,0 +1,33 @@
+name: Feature request
+description: Something the plugin should do, or a setting it should have.
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you want
+      description: What the plugin should do differently, and what you see today.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The situation this comes up in. A screenshot helps if it is about how something looks.
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Kind of change
+      options:
+        - A new setting or menu option
+        - A kind of light or object the plugin should also recolour
+        - Something about installing, updating, or the ini
+        - Something else
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the settings table in the README and `docs/` for an existing way to do this
+          required: true
