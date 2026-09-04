@@ -26,6 +26,12 @@ natively and stops if they fail, then cross-compiles the `.asi` statically
 table). Plain CMake, so Visual Studio works too; MinHook and Dear ImGui are
 vendored under `third_party/`, no network needed.
 
+`.dockerignore` is an allowlist mirroring the Dockerfile's `COPY` lines, so
+the build context holds only sources, resources, tests, vendored code and
+the build files; docs, media, tools, workflows and personal files never
+reach the daemon. Add a path to both when the Dockerfile starts copying
+something new.
+
 Installing while the game runs works by rename-then-copy (the next launch
 picks the new file up). A leftover `FiveM_DumpServer` crash dialog keeps the
 file open; close it first.
