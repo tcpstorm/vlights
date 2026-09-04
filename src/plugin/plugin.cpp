@@ -58,6 +58,7 @@ namespace vlights
 		Config cfg = in;
 		cfg.match.sourceHue = ToHSV(cfg.source).h;
 		cfg.match.source2Hue = ToHSV(cfg.source2).h;
+		cfg.match.source3Hue = ToHSV(cfg.source3).h;
 		cfg.match.hueWindow = std::clamp(cfg.match.hueWindow, 0.f, 180.f);
 		cfg.match.minSaturation = std::clamp(cfg.match.minSaturation, 0.f, 1.f);
 		cfg.match.blend = std::clamp(cfg.match.blend, 0.f, 1.f);

@@ -46,7 +46,8 @@ namespace vlights::lodlights
 			for (size_t i = 0; i < n; ++i)
 			{
 				uint32_t v = originals[i];
-				if (Recolor(v, cfg.match))
+				const bool force = cfg.allStreetLights && i < dl.numStreetLights;
+				if (force ? ForceRecolor(v, cfg.match) : Recolor(v, cfg.match))
 					changed++;
 				dl.rgbi.data[i] = v;
 			}
@@ -180,7 +181,10 @@ namespace vlights::lodlights
 					}
 				}
 
-				if (Recolor(entry, cfg.match))
+				// The block's own street-light flag (first numStreetLights entries):
+				// with all_streetlights those take the target whatever their colour.
+				const bool force = cfg.allStreetLights && i < dl.numStreetLights;
+				if (force ? ForceRecolor(entry, cfg.match) : Recolor(entry, cfg.match))
 					changed++;
 			}
 

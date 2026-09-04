@@ -134,5 +134,30 @@ int main()
 
 	if (g_failures == 0)
 		std::printf("all recolor tests passed\n");
+	// zone 3: the teal "cool" lamp light matches; cyan neon and near-white do not
+	{
+		MatchParams p;
+		CHECK(Matches(RGB{ 120.f, 255.f, 232.f }, p));   // prop_streetlight_01b
+		CHECK(!Matches(RGB{ 0.f, 255.f, 255.f }, p));    // cyan neon, saturation 1.0
+		CHECK(!Matches(RGB{ 221.f, 236.f, 231.f }, p));  // near-white, saturation 0.06
+		p.zone3 = false;
+		CHECK(!Matches(RGB{ 120.f, 255.f, 232.f }, p));
+	}
+
+	// ForceRecolor: any colour becomes the target (brightness kept), black stays
+	{
+		MatchParams p;
+		uint32_t v = 0xAAFFFFFFu; // white, intensity 170
+		CHECK(ForceRecolor(v, p));
+		CHECK((v >> 24) == 0xAAu);
+		RGB c = Unpack(v);
+		CHECK(c.r == 235.f && c.g == 240.f && c.b == 255.f);
+		uint32_t black = 0xAA000000u;
+		CHECK(!ForceRecolor(black, p));
+		p.enabled = false;
+		uint32_t w = 0xAAFFFFFFu;
+		CHECK(!ForceRecolor(w, p));
+	}
+
 	return g_failures == 0 ? 0 : 1;
 }
