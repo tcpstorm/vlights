@@ -1,0 +1,78 @@
+name: A light is the wrong colour
+description: A street light, lantern, or distant glow that still shows its original colour, or something that changed and should not have.
+title: "[Colour] "
+labels: ["colour"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. Almost every report of this kind is solved from the log, so the two things that matter most are the log with debug on and where the lamp is.
+  - type: dropdown
+    id: what
+    attributes:
+      label: What is wrong
+      options:
+        - A lamp near me still has its original colour
+        - The glowing lantern head is the wrong colour but the light it casts is right
+        - Distant lights across the city are the wrong colour
+        - Something changed colour that should not have (a sign, a vehicle, a window)
+        - Colour changes from the menu do not apply
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: coords
+    attributes:
+      label: Where
+      description: World coordinates of one affected lamp if you can get them (x and y), otherwise the nearest street or landmark.
+      placeholder: "x=-663.5 y=-1734.5, or 'Little Seoul, corner of ...'"
+    validations:
+      required: true
+  - type: dropdown
+    id: type
+    attributes:
+      label: What kind of light
+      options:
+        - Street lamp post
+        - Wall-mounted lamp
+        - Freeway overhead lamp
+        - Floodlight or industrial light
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: VLights version and game build
+      description: Both are on the first line of `vlights.log` next to the plugin.
+      placeholder: "VLights 0.21.0, game build 3751"
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where were you playing
+      options:
+        - Story mode
+        - A server (say which below if you can)
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log with debug on
+      description: |
+        Set `debug = 1` and `near_log = 1` in `vlights.ini`, restart, walk to the lamp, press F9, then paste the log here (or attach it). The lines starting `near:`, `tex:` and `unmatched warm light colours` are the useful ones. If you can, also set `probe = x y 25` with the lamp's coordinates before restarting. Set `debug` back to `0` afterwards.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Drag an image in. Night time, with the lamp in frame.
+  - type: textarea
+    id: ini
+    attributes:
+      label: Changed settings
+      description: Anything in `vlights.ini` you changed from the defaults, or "defaults".

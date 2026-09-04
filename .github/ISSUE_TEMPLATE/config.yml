@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: How to read the log, and what to try first
+    url: https://github.com/tcpstorm/vlights/blob/main/docs/diagnostics.md
+    about: The debug switches, the probe, and what each log line means. Most reports need one of these.
+  - name: Why a light does or does not change
+    url: https://github.com/tcpstorm/vlights/blob/main/docs/README.md
+    about: One document per kind of light, each ending with the procedure for its kind of problem.
