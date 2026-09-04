@@ -88,7 +88,11 @@ mode by endpoint order (`c0 > c1`: four colours; otherwise three plus
 transparent); if a recolour flips the order the endpoints are swapped back
 and the 2-bit indices remapped (`XOR 0x55555555` in four-colour mode; swap
 0 and 1 only in three-colour mode), and equal endpoints are nudged apart.
-Uncompressed formats are a per-pixel pass.
+Uncompressed formats are a per-pixel pass. Endpoint results are memoised
+in two 65536-entry tables (matched / forced) keyed on the config snapshot,
+so the HSV maths runs once per distinct colour rather than once per block:
+a 512x1024 lens texture with mips went from tens of milliseconds to about
+one.
 
 ## Live repaint
 
