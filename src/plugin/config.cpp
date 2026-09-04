@@ -65,6 +65,31 @@ namespace vlights
 		s += "min_saturation2 = " + FloatText(cfg.match.minSaturation2) + "\n";
 		s += "max_saturation2 = " + FloatText(cfg.match.maxSaturation2) + "\n";
 		s += "\n";
+		s += "# Third match zone for the teal 'cool' lamps (prop_streetlight_01b, light\n";
+		s += "# colour 120 255 232: hue 170, saturation 0.53).\n";
+		s += "match_cool = " + std::string(cfg.match.zone3 ? "1" : "0") + "\n";
+		s += "source3 = " + ColorText(cfg.source3) + "\n";
+		s += "hue_window3 = " + FloatText(cfg.match.hueWindow3) + "\n";
+		s += "min_saturation3 = " + FloatText(cfg.match.minSaturation3) + "\n";
+		s += "max_saturation3 = " + FloatText(cfg.match.maxSaturation3) + "\n";
+		s += "\n";
+		s += "# all_streetlights: every light on a model whose name contains one of\n";
+		s += "# streetlight_names, and every LOD entry the map flags as a street light,\n";
+		s += "# takes the target colour whatever its original colour (white, teal, pale\n";
+		s += "# blue variants included). 0 = only colours the zones above match.\n";
+		s += "all_streetlights = " + std::string(cfg.allStreetLights ? "1" : "0") + "\n";
+		s += "streetlight_names = ";
+		for (size_t i = 0; i < cfg.streetlightNames.size(); ++i)
+			s += (i ? ", " : "") + cfg.streetlightNames[i];
+		s += "\n";
+		s += "# streetlight_models: archetype names whose map placements also get their\n";
+		s += "# per-placement light overrides forced. Models loaded with a streetlight\n";
+		s += "# name are added on the fly; list extras here.\n";
+		s += "streetlight_models = ";
+		for (size_t i = 0; i < cfg.streetlightModels.size(); ++i)
+			s += (i ? ", " : "") + cfg.streetlightModels[i];
+		s += "\n";
+		s += "\n";
 		s += "# blend: 1 = replace with target, 0.5 = halfway, 0 = leave untouched.\n";
 		s += "blend = " + FloatText(cfg.match.blend) + "\n";
 		s += "# keep_brightness: scale target so each light keeps its own brightness\n";
@@ -87,6 +112,21 @@ namespace vlights
 		for (size_t i = 0; i < cfg.textureNames.size(); ++i)
 			s += (i ? ", " : "") + cfg.textureNames[i];
 		s += "\n";
+		s += "# texture_exclude: name fragments that are never recoloured even if they\n";
+		s += "# match texture_names (rsn_ = Rockstar sign artwork such as\n";
+		s += "# rsn_os_streetlight_orange).\n";
+		s += "texture_exclude = ";
+		for (size_t i = 0; i < cfg.textureExclude.size(); ++i)
+			s += (i ? ", " : "") + cfg.textureExclude[i];
+		s += "\n";
+		s += "# texture_force: lens textures retinted wholesale, every pixel toward the\n";
+		s += "# target with its brightness kept, because their colour is a faint tint no\n";
+		s += "# zone can pick out (prop_streetlight_01_bulb is grey-green at saturation\n";
+		s += "# 0.1-0.2). Needs all_streetlights = 1.\n";
+		s += "texture_force = ";
+		for (size_t i = 0; i < cfg.textureForce.size(); ++i)
+			s += (i ? ", " : "") + cfg.textureForce[i];
+		s += "\n";
 		s += "\n";
 		s += "# Diagnostics (written to vlights.log next to the .asi).\n";
 		s += "# debug: master switch. With 0 nothing below is logged during play, whatever\n";
@@ -103,6 +143,11 @@ namespace vlights
 		s += "# scanned and its entities / LOD lights within radius of that world point\n";
 		s += "# are logged (model hash, extensions, original colour). 0 0 = off.\n";
 		s += "probe = " + FloatText(cfg.probeX) + " " + FloatText(cfg.probeY) + " " + FloatText(cfg.probeRadius) + "\n";
+		s += "\n";
+		s += "# update_check: once at startup, ask api.github.com for the latest release\n";
+		s += "# and show a notice in the menu if it is newer. Nothing is downloaded or\n";
+		s += "# installed, nothing else is sent. 0 = never contact anything.\n";
+		s += "update_check = " + std::string(cfg.updateCheck ? "1" : "0") + "\n";
 		s += "\n";
 		s += "# Hotkeys: F1-F24, or a hex/decimal virtual-key code. 0 disables.\n";
 		s += "# reload_key re-reads this file and repaints loaded lights.\n";
@@ -148,6 +193,7 @@ namespace vlights
 		return s.substr(a, b - a);
 	}
 
+	static void ParseList(const std::string& val, std::vector<std::string>& out);
 	static std::string Lower(std::string s)
 	{
 		for (auto& c : s)
@@ -265,6 +311,31 @@ namespace vlights
 			else if (key == "hue_window2")    ok = ParseFloat(val, cfg.match.hueWindow2);
 			else if (key == "min_saturation2") ok = ParseFloat(val, cfg.match.minSaturation2);
 			else if (key == "max_saturation2") ok = ParseFloat(val, cfg.match.maxSaturation2);
+			else if (key == "match_cool")     ok = ParseBool(val, cfg.match.zone3);
+			else if (key == "source3")        ok = ParseColor(val, cfg.source3);
+			else if (key == "hue_window3")    ok = ParseFloat(val, cfg.match.hueWindow3);
+			else if (key == "min_saturation3") ok = ParseFloat(val, cfg.match.minSaturation3);
+			else if (key == "max_saturation3") ok = ParseFloat(val, cfg.match.maxSaturation3);
+			else if (key == "all_streetlights") ok = ParseBool(val, cfg.allStreetLights);
+			else if (key == "streetlight_models") ParseList(val, cfg.streetlightModels);
+			else if (key == "texture_exclude") ParseList(val, cfg.textureExclude);
+			else if (key == "texture_force")   ParseList(val, cfg.textureForce);
+			else if (key == "streetlight_names")
+			{
+				cfg.streetlightNames.clear();
+				std::string t = Lower(val);
+				size_t start = 0;
+				while (start <= t.size())
+				{
+					size_t comma = t.find(',', start);
+					std::string item = Trim(t.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+					if (!item.empty())
+						cfg.streetlightNames.push_back(item);
+					if (comma == std::string::npos)
+						break;
+					start = comma + 1;
+				}
+			}
 			else if (key == "blend")          ok = ParseFloat(val, cfg.match.blend);
 			else if (key == "keep_brightness") ok = ParseBool(val, cfg.match.keepBrightness);
 			else if (key == "debug")          ok = ParseBool(val, cfg.debug);
@@ -276,6 +347,7 @@ namespace vlights
 			else if (key == "near_enabled")   ok = ParseBool(val, cfg.nearEnabled);
 			else if (key == "near_log")       ok = ParseBool(val, cfg.nearLog);
 			else if (key == "textures")       ok = ParseBool(val, cfg.texturesEnabled);
+			else if (key == "update_check")   ok = ParseBool(val, cfg.updateCheck);
 			else if (key == "texture_names")
 			{
 				cfg.textureNames.clear();
@@ -314,6 +386,10 @@ namespace vlights
 
 		cfg.match.sourceHue = ToHSV(cfg.source).h;
 		cfg.match.source2Hue = ToHSV(cfg.source2).h;
+		cfg.match.source3Hue = ToHSV(cfg.source3).h;
+		cfg.match.hueWindow3 = std::clamp(cfg.match.hueWindow3, 0.f, 180.f);
+		cfg.match.minSaturation3 = std::clamp(cfg.match.minSaturation3, 0.f, 1.f);
+		cfg.match.maxSaturation3 = std::clamp(cfg.match.maxSaturation3, 0.f, 1.f);
 		cfg.match.hueWindow2 = std::clamp(cfg.match.hueWindow2, 0.f, 180.f);
 		cfg.match.minSaturation2 = std::clamp(cfg.match.minSaturation2, 0.f, 1.f);
 		cfg.match.maxSaturation2 = std::clamp(cfg.match.maxSaturation2, 0.f, 1.f);
@@ -336,5 +412,26 @@ namespace vlights
 		fputs(DefaultIniText().c_str(), f);
 		fclose(f);
 		return true;
+	}
+}
+
+namespace vlights
+{
+	// "a, b, c" -> lower-case trimmed items; empty input clears the list.
+	static void ParseList(const std::string& val, std::vector<std::string>& out)
+	{
+		out.clear();
+		std::string t = Lower(val);
+		size_t start = 0;
+		while (start <= t.size())
+		{
+			size_t comma = t.find(',', start);
+			std::string item = Trim(t.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+			if (!item.empty())
+				out.push_back(item);
+			if (comma == std::string::npos)
+				break;
+			start = comma + 1;
+		}
 	}
 }

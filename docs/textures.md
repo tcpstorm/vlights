@@ -76,7 +76,13 @@ the data; each level is `ceil(w/4)*ceil(h/4)*blockBytes` for BC formats.
 (default `streetlight, wall_light, lamppost, lamp_post, ind_light,
 oldlight`). Vehicle indicator textures (`*_lights`, `*_lights_glass`)
 share dictionaries with lamps and match the sodium zone, so selection has
-to be by name. For BC1/2/3 only the two RGB565 endpoints per 4x4 block are
+to be by name. `texture_exclude` (default `rsn_`) removes false positives
+such as `rsn_os_streetlight_orange`, a Rockstar sign artwork that merely
+contains the word. `texture_force` (default `prop_streetlight_01_bulb`,
+with `all_streetlights` on) retints a texture wholesale, every pixel toward
+the target with its brightness kept: that lens is a grey-green tint at
+saturation 0.1 to 0.2 throughout, which no zone can single out without
+catching half the map. For BC1/2/3 only the two RGB565 endpoints per 4x4 block are
 recoloured through the same matcher as the lights. BC1 chooses its block
 mode by endpoint order (`c0 > c1`: four colours; otherwise three plus
 transparent); if a recolour flips the order the endpoints are swapped back

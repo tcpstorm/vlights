@@ -22,8 +22,10 @@
 #include "color/recolor.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
+#include "plugin/update.h"
 
 #include <windows.h>
+#include <shellapi.h>
 #include <d3d11.h>
 #include <dxgi.h>
 
@@ -299,7 +301,17 @@ namespace
 
 		if (ImGui::Begin("VLights", nullptr, flags))
 		{
-			ImGui::SeparatorText("VLights");
+			ImGui::SeparatorText("VLights " VLIGHTS_VERSION);
+			{
+				std::string latest, url;
+				if (vlights::update::Available(latest, url))
+				{
+					ImGui::TextColored(ImVec4(1.f, 0.85f, 0.3f, 1.f), "Update available: %s (running " VLIGHTS_VERSION ")", latest.c_str());
+					ImGui::SameLine();
+					if (ImGui::SmallButton("Open releases page"))
+						ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+				}
+			}
 			bool changed = false;
 
 			changed |= ImGui::Checkbox("Enabled", &cfg.match.enabled);
@@ -324,7 +336,7 @@ namespace
 			changed |= ImGui::SliderFloat("Blend", &cfg.match.blend, 0.f, 1.f, "%.2f");
 			changed |= ImGui::Checkbox("Keep each light's brightness", &cfg.match.keepBrightness);
 			changed |= ImGui::Checkbox("Also recolour nearby lamp lights (model + entity lights)", &cfg.nearEnabled);
-			ImGui::TextDisabled("LOD tiers and lantern textures repaint instantly; nearby lamp lights as they stream in again.");
+			ImGui::TextWrapped("LOD tiers and lantern textures repaint instantly; nearby lamp lights as they stream in again.");
 			if (cfg.nearEnabled && !vlights::NearAvailable())
 			{
 				ImGui::SameLine();
@@ -358,6 +370,25 @@ namespace
 				changed |= ImGui::SliderFloat("Hue window##2", &cfg.match.hueWindow2, 0.f, 45.f, "%.0f deg");
 				changed |= ImGui::SliderFloat("Min saturation##2", &cfg.match.minSaturation2, 0.f, 1.f, "%.2f");
 				changed |= ImGui::SliderFloat("Max saturation##2", &cfg.match.maxSaturation2, 0.f, 1.f, "%.2f");
+			}
+			ImGui::SeparatorText("Cool lamps");
+			changed |= ImGui::Checkbox("Also match teal lamps (prop_streetlight_01b)", &cfg.match.zone3);
+			if (cfg.match.zone3)
+			{
+				float source3[3] = { cfg.source3.r / 255.f, cfg.source3.g / 255.f, cfg.source3.b / 255.f };
+				if (ImGui::ColorEdit3("Cool colour", source3))
+				{
+					cfg.source3 = vlights::RGB{ source3[0] * 255.f, source3[1] * 255.f, source3[2] * 255.f };
+					changed = true;
+				}
+				changed |= ImGui::SliderFloat("Hue window##3", &cfg.match.hueWindow3, 0.f, 45.f, "%.0f deg");
+				changed |= ImGui::SliderFloat("Min saturation##3", &cfg.match.minSaturation3, 0.f, 1.f, "%.2f");
+				changed |= ImGui::SliderFloat("Max saturation##3", &cfg.match.maxSaturation3, 0.f, 1.f, "%.2f");
+			}
+			ImGui::SeparatorText("Every street lamp");
+			changed |= ImGui::Checkbox("All street lamps take the target colour", &cfg.allStreetLights);
+			ImGui::TextWrapped("Lights on street-lamp models and LOD entries flagged as street lights change whatever their original colour (white, teal, pale blue variants included).");
+			{
 				ImGui::TextDisabled("The saturation ceiling keeps amber runway lights out.");
 			}
 
@@ -374,6 +405,7 @@ namespace
 			ImGui::TextDisabled("Models: %llu with %llu lights, %llu recolored at load",
 				(unsigned long long)st.nearModels, (unsigned long long)st.nearLights, (unsigned long long)st.nearRecolored);
 			ImGui::TextDisabled(g_mouseSuspended ? "Camera locked while this window is open." : "Camera not locked (no raw mouse registration found).");
+			ImGui::TextDisabled("%s", vlights::update::Status());
 
 			ImGui::Separator();
 			if (ImGui::Button("Save to ini"))

@@ -21,6 +21,7 @@
 #include "plugin/config.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
+#include "plugin/update.h"
 
 #include <windows.h>
 
@@ -50,6 +51,9 @@ namespace
 		{
 			vlights::Log("menu disabled (menu_key = 0)");
 		}
+
+		if (vlights::GetConfig().updateCheck)
+			vlights::update::Start();
 
 		bool reloadWasDown = false;
 		bool menuWasDown = false;
