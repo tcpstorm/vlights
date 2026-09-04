@@ -52,6 +52,9 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
+# ---- per-person assistant instructions (CLAUDE.md imports this; see its comment)
+CLAUDE.local.md
+
 # ---- scratch: screenshots, notes, local experiments ---------------------------
 scratch/
 *.png

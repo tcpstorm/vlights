@@ -12,6 +12,11 @@ that allow plugins both work.
 
 ![Changing the street light colour live from the in-game menu](docs/media/demo.gif)
 
+The whole city follows, right out to the horizon. Here with the target set
+to red for effect:
+
+![Los Santos at night with every street light red](docs/media/lods.jpg)
+
 ## Install
 
 1. Download `VLights.asi` from the
@@ -34,6 +39,8 @@ cosmetic plugin is your call, not the plugin's.
 Press **F10** in-game for the menu. It floats over the game as its own
 small window; the camera is locked while it is open so the mouse does not
 move your view.
+
+![The VLights menu over the game](docs/media/menu.png)
 
 - **Target colour** with presets: cool LED, neutral, warm LED, and a
   bright green for checking coverage.
