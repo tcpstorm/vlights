@@ -100,8 +100,23 @@ at least `min_saturation` (0.6). Zone 2 (cream): hue within `hue_window2`
 (14) of `source2` (255,227,166: hue 41), saturation between
 `min_saturation2` (0.30) and `max_saturation2` (0.70). The ceiling keeps
 amber runway edge lights (255,188,2: saturation 0.99) out at the user's
-request; the floor keeps cream-white wall lights out. `keep_brightness`
-scales the target by the light's own value so a dim lamp stays dim.
+request; the floor keeps cream-white wall lights out. Zone 3 (cool): hue
+within `hue_window3` (15) of `source3` (120,255,232: hue 170), saturation
+0.30 to 0.80, for `prop_streetlight_01b`'s teal light; the ceiling keeps
+cyan neon out. `keep_brightness` scales the target by the light's own value
+so a dim lamp stays dim.
+
+**All street lamps.** Vanilla has lamp-post variants whose light is not
+sodium at all: `_01b` teal (120,255,232), `_11a/b` and `_14a` near-white
+(221,236,231), `_14a` pale blue (197,240,255), `_15a` (234,247,225). With
+`all_streetlights = 1` (default) every light on a model whose name contains
+one of `streetlight_names` (default `streetlight`) is forced to the target
+whatever its colour (flashing lights still skipped), and in the LOD arrays
+the entries the block flags as street lights (`numStreetLights`) are forced
+too, and so are the per-placement light overrides on entities whose
+archetype hash is a known lamp model (`streetlight_models`, plus every
+model loaded with a streetlight name). `ForceRecolor` in `recolor.h` is
+the matcher-free path; brightness is still kept.
 
 ## If a nearby lamp is the wrong colour
 

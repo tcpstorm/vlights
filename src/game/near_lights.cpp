@@ -57,6 +57,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace vlights::nearlights
@@ -321,7 +322,7 @@ namespace vlights::nearlights
 		}
 
 		// Recolour one light record in place. Returns true if it changed.
-		bool RecolourAt(uint8_t* rec, size_t colourOff, size_t flashOff, size_t volOff, const Config& cfg)
+		bool RecolourAt(uint8_t* rec, size_t colourOff, size_t flashOff, size_t volOff, const Config& cfg, bool force = false)
 		{
 			if (!cfg.nearEnabled || !cfg.match.enabled)
 				return false;
@@ -332,7 +333,7 @@ namespace vlights::nearlights
 			{
 				uint8_t* c = rec + off;
 				uint32_t packed = PackBytes(c);
-				if (Recolor(packed, cfg.match))
+				if (force ? ForceRecolor(packed, cfg.match) : Recolor(packed, cfg.match))
 				{
 					UnpackBytes(packed, c);
 					changed = true;
@@ -554,17 +555,89 @@ namespace vlights::nearlights
 			return buf;
 		}
 
+		uint32_t Joaat(const char* s)
+		{
+			uint32_t h = 0;
+			for (; *s; ++s)
+			{
+				h += static_cast<uint8_t>(tolower(static_cast<unsigned char>(*s)));
+				h += h << 10;
+				h ^= h >> 6;
+			}
+			h += h << 3;
+			h ^= h >> 11;
+			h += h << 15;
+			return h;
+		}
+
+		// Archetype hashes of street-lamp models: the configured list plus every
+		// model seen at load whose name says street lamp. Map placements of these
+		// get their per-placement light overrides forced (all_streetlights).
+		SRWLOCK g_lampHashLock = SRWLOCK_INIT;
+		std::unordered_set<uint32_t> g_lampHashes;
+
+		void NoteLampModel(const char* modelName)
+		{
+			const char* n = modelName;
+			if (strncmp(n, "pack:/", 6) == 0)
+				n += 6;
+			char buf[64];
+			snprintf(buf, sizeof(buf), "%s", n);
+			if (char* dot = strstr(buf, ".#"))
+				*dot = 0;
+			const uint32_t h = Joaat(buf);
+			AcquireSRWLockExclusive(&g_lampHashLock);
+			g_lampHashes.insert(h);
+			ReleaseSRWLockExclusive(&g_lampHashLock);
+		}
+
+		std::unordered_set<uint32_t> LampHashSet(const Config& cfg)
+		{
+			std::unordered_set<uint32_t> out;
+			if (!cfg.allStreetLights)
+				return out;
+			for (const std::string& m : cfg.streetlightModels)
+				if (!m.empty())
+					out.insert(Joaat(m.c_str()));
+			AcquireSRWLockShared(&g_lampHashLock);
+			out.insert(g_lampHashes.begin(), g_lampHashes.end());
+			ReleaseSRWLockShared(&g_lampHashLock);
+			return out;
+		}
+
+		// With all_streetlights, a model whose name contains one of
+		// streetlight_names has every light forced to the target.
+		bool ForcedModel(track::Kind kind, const void* obj, const Config& cfg)
+		{
+			if (!cfg.allStreetLights || kind == track::Ydd)
+				return false;
+			char name[64];
+			ModelName(kind, obj, name, sizeof(name));
+			for (char* c = name; *c; ++c)
+				*c = static_cast<char>(tolower(static_cast<unsigned char>(*c)));
+			for (const std::string& pat : cfg.streetlightNames)
+			{
+				if (!pat.empty() && strstr(name, pat.c_str()))
+				{
+					NoteLampModel(name);
+					return true;
+				}
+			}
+			return false;
+		}
+
 		bool RepaintModel(track::Kind kind, void* obj, const std::vector<uint32_t>& originals, const Config& cfg, uint64_t& lights, uint64_t& changed)
 		{
 			std::vector<uint8_t*> attrs;
 			CollectLights(kind, obj, attrs);
 			if (attrs.size() * 2 != originals.size())
 				return false;
+			const bool force = ForcedModel(kind, obj, cfg);
 			for (size_t i = 0; i < attrs.size(); ++i)
 			{
 				UnpackBytes(originals[i * 2], attrs[i] + kLightColour);
 				UnpackBytes(originals[i * 2 + 1], attrs[i] + kLightVolumeColour);
-				if (RecolourAt(attrs[i], kLightColour, kLightFlashiness, kLightVolumeColour, cfg))
+				if (RecolourAt(attrs[i], kLightColour, kLightFlashiness, kLightVolumeColour, cfg, force))
 					changed++;
 			}
 			lights += attrs.size();
@@ -720,6 +793,7 @@ namespace vlights::nearlights
 			}
 
 			const Config cfg = GetConfig();
+			const bool force = ForcedModel(h.kind, obj, cfg);
 			std::vector<uint32_t> originals;
 			originals.reserve(attrs.size() * 2);
 			uint32_t changed = 0;
@@ -728,7 +802,7 @@ namespace vlights::nearlights
 				const uint32_t before = PackBytes(attr + kLightColour);
 				originals.push_back(before);
 				originals.push_back(PackBytes(attr + kLightVolumeColour));
-				if (RecolourAt(attr, kLightColour, kLightFlashiness, kLightVolumeColour, cfg))
+				if (RecolourAt(attr, kLightColour, kLightFlashiness, kLightVolumeColour, cfg, force))
 					changed++;
 				else if (attr[kLightFlashiness] == 0)
 					NoteUnmatched(before);
@@ -1253,7 +1327,8 @@ namespace vlights::nearlights
 	// `validate` = every pointer is probed before use: the repaint path runs
 	// from the menu thread long after the block loaded, and the game may have
 	// released or reused parts of it by then (that crashed once, 0.15.0).
-	static bool CollectEntityLights(void* const* entities, uint32_t count, std::vector<uint8_t*>& out, bool validate)
+	static bool CollectEntityLights(void* const* entities, uint32_t count, std::vector<uint8_t*>& out, bool validate,
+		const std::unordered_set<uint32_t>* lampHashes = nullptr, std::vector<bool>* forced = nullptr)
 	{
 		if (!entities || count == 0 || count > 100000)
 			return true;
@@ -1266,6 +1341,7 @@ namespace vlights::nearlights
 				continue;
 			if (validate && !ObjectValid(e, kEntityExtensionsArray + 16))
 				return false;
+			const bool lamp = lampHashes && lampHashes->count(*reinterpret_cast<const uint32_t*>(e + 8)) != 0;
 			const uint16_t nExt = *reinterpret_cast<const uint16_t*>(e + kEntityExtensionsArray + 8);
 			if (nExt == 0 || nExt > kMaxExtensions)
 				continue;
@@ -1285,7 +1361,11 @@ namespace vlights::nearlights
 				if (!PlausiblePtr(defs) || nDefs == 0 || nDefs > kMaxLightDefs || !Readable(defs, static_cast<size_t>(nDefs) * kLightDefSize))
 					continue;
 				for (uint16_t d = 0; d < nDefs; ++d)
+				{
 					out.push_back(defs + static_cast<size_t>(d) * kLightDefSize);
+					if (forced)
+						forced->push_back(lamp);
+				}
 			}
 		}
 		return true;
@@ -1296,18 +1376,21 @@ namespace vlights::nearlights
 		if (!cfg.nearEnabled)
 			return 0;
 		std::vector<uint8_t*> defs;
-		CollectEntityLights(entities, count, defs, false);
+		std::vector<bool> forced;
+		const std::unordered_set<uint32_t> lamps = LampHashSet(cfg);
+		CollectEntityLights(entities, count, defs, false, &lamps, &forced);
 		if (defs.empty())
 			return 0;
 		uint32_t changed = 0;
 		std::vector<uint32_t> before;
 		before.reserve(defs.size() * 2);
-		for (uint8_t* d : defs)
+		for (size_t i = 0; i < defs.size(); ++i)
 		{
+			uint8_t* d = defs[i];
 			const uint32_t col = PackBytes(d + kLightDefColour);
 			before.push_back(col);
 			before.push_back(PackBytes(d + kLightDefVolumeColour));
-			if (RecolourAt(d, kLightDefColour, kLightDefFlashiness, kLightDefVolumeColour, cfg))
+			if (RecolourAt(d, kLightDefColour, kLightDefFlashiness, kLightDefVolumeColour, cfg, forced[i]))
 				changed++;
 			else if (d[kLightDefFlashiness] == 0)
 				NoteUnmatched(col);
@@ -1326,7 +1409,9 @@ namespace vlights::nearlights
 	bool RepaintEntityLights(void* const* entities, uint32_t count, const std::vector<uint32_t>& originals, size_t offset, const Config& cfg, uint64_t& lights, uint64_t& changed)
 	{
 		std::vector<uint8_t*> defs;
-		if (!CollectEntityLights(entities, count, defs, true))
+		std::vector<bool> forced;
+		const std::unordered_set<uint32_t> lamps = LampHashSet(cfg);
+		if (!CollectEntityLights(entities, count, defs, true, &lamps, &forced))
 			return false;
 		if (originals.size() != offset + defs.size() * 2)
 			return false;
@@ -1334,7 +1419,7 @@ namespace vlights::nearlights
 		{
 			UnpackBytes(originals[offset + i * 2], defs[i] + kLightDefColour);
 			UnpackBytes(originals[offset + i * 2 + 1], defs[i] + kLightDefVolumeColour);
-			if (RecolourAt(defs[i], kLightDefColour, kLightDefFlashiness, kLightDefVolumeColour, cfg))
+			if (RecolourAt(defs[i], kLightDefColour, kLightDefFlashiness, kLightDefVolumeColour, cfg, forced[i]))
 				changed++;
 		}
 		lights += defs.size();

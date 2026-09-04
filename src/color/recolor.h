@@ -114,6 +114,15 @@ namespace vlights
 		float minSaturation2 = 0.3f;
 		float maxSaturation2 = 0.7f; // runway (0.99) and car-park amber (0.93) stay out; downtown pieces are 0.36
 
+		// Zone 3: the teal "cool" lamps (prop_streetlight_01b carries (120,255,232):
+		// hue 170, saturation 0.53), so a non-sodium street lamp follows the
+		// target too. Saturation band keeps cyan neon (0.9+) and near-white out.
+		bool zone3 = true;
+		float source3Hue = 169.8f;   // hue of (120,255,232)
+		float hueWindow3 = 15.f;
+		float minSaturation3 = 0.3f;
+		float maxSaturation3 = 0.8f;
+
 		RGB target{ 235.f, 240.f, 255.f };
 		float blend = 1.f;           // 1 = replace, 0 = untouched
 		bool keepBrightness = true;  // scale target to the light's original V
@@ -130,6 +139,9 @@ namespace vlights
 			return true;
 		if (p.zone2 && hsv.s >= p.minSaturation2 && hsv.s <= p.maxSaturation2
 			&& HueDistance(hsv.h, p.source2Hue) <= p.hueWindow2)
+			return true;
+		if (p.zone3 && hsv.s >= p.minSaturation3 && hsv.s <= p.maxSaturation3
+			&& HueDistance(hsv.h, p.source3Hue) <= p.hueWindow3)
 			return true;
 		return false;
 	}
@@ -148,6 +160,24 @@ namespace vlights
 			}
 		}
 		return Lerp(c, target, std::clamp(p.blend, 0.f, 1.f));
+	}
+
+	// In-place on a packed rgbi entry, whatever its colour (used for lights
+	// that are known to be street lamps by other means: the model's name, or
+	// the LOD block's street-light flag). Returns true if it was changed.
+	inline bool ForceRecolor(uint32_t& packed, const MatchParams& p)
+	{
+		if (!p.enabled)
+			return false;
+		RGB c = Unpack(packed);
+		HSV hsv = ToHSV(c);
+		if (hsv.v < p.minValue)
+			return false;
+		uint32_t out = Pack(Apply(c, hsv, p), packed);
+		if (out == packed)
+			return false;
+		packed = out;
+		return true;
 	}
 
 	// In-place on a packed rgbi entry. Returns true if it was changed.

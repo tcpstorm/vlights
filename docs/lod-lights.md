@@ -50,7 +50,11 @@ runs first, then Cfx's, then the game's.
 `src/game/lod_lights.cpp`:
 
 - `Process()` walks `rgbi[]` and rewrites every entry the matcher accepts
-  (`src/color/recolor.h`, HSV two-zone matcher) before the game reads it.
+  (`src/color/recolor.h`, HSV three-zone matcher) before the game reads it.
+  With `all_streetlights` the first `numStreetLights` entries (the block's
+  own street-light flag) are rewritten whatever their colour. Note the flag
+  is not complete: in some `_lodlights` blocks lamp rows sit past it, so the
+  colour zones still matter there.
 - The same call is where the entity light overrides are handled
   (near-lights.md) and where the near-light hooks get installed on the
   first call (the streaming manager is up by then).
