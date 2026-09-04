@@ -10,6 +10,8 @@ Client-side only and purely cosmetic. It changes colours in your own game
 as the world streams in and touches nothing else. Story mode and servers
 that allow plugins both work.
 
+![Changing the street light colour live from the in-game menu](docs/media/demo.gif)
+
 ## Install
 
 1. Download `VLights.asi` from the
@@ -98,3 +100,8 @@ for changes to game hooks are in `CONTRIBUTING.md`.
 `docs/` holds the reference material: how each kind of light works and is
 hooked, the FiveM and engine behaviour that shaped the design, the
 diagnostics, and the development notes. Start at `docs/README.md`.
+
+## Licence
+
+MIT, see `LICENSE`. Bundles MinHook (BSD 2-Clause) and Dear ImGui (MIT)
+under `third_party/`.

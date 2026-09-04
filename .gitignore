@@ -56,5 +56,11 @@ Desktop.ini
 scratch/
 *.png
 *.jpg
+*.gif
+*.mp4
+# ...except the media the README shows
+!docs/media/*.png
+!docs/media/*.jpg
+!docs/media/*.gif
 __pycache__/
 *.pyc

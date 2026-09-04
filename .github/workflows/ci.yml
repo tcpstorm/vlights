@@ -56,6 +56,13 @@ jobs:
 
       - name: Compare VERSION with main
         run: |
+          # Docs-only pull requests (markdown, docs/, media, this workflow
+          # folder) do not need a release; everything else does.
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if [ -n "$changed" ] && ! echo "$changed" | grep -vqE '(\.md$|^docs/|^\.github/|^LICENSE$)'; then
+            echo "docs-only change; no version bump required"
+            exit 0
+          fi
           new=$(tr -d '[:space:]' < VERSION)
           old=$(git show "origin/${{ github.base_ref }}:VERSION" 2>/dev/null | tr -d '[:space:]' || echo 0.0.0)
           echo "main: $old   this PR: $new"
