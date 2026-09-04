@@ -52,9 +52,18 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
+# ---- per-person assistant instructions (CLAUDE.md imports this; see its comment)
+CLAUDE.local.md
+
 # ---- scratch: screenshots, notes, local experiments ---------------------------
 scratch/
 *.png
 *.jpg
+*.gif
+*.mp4
+# ...except the media the README shows
+!docs/media/*.png
+!docs/media/*.jpg
+!docs/media/*.gif
 __pycache__/
 *.pyc

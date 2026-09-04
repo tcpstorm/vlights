@@ -10,6 +10,13 @@ Client-side only and purely cosmetic. It changes colours in your own game
 as the world streams in and touches nothing else. Story mode and servers
 that allow plugins both work.
 
+![Changing the street light colour live from the in-game menu](docs/media/demo.gif)
+
+The whole city follows, right out to the horizon. Here with the target set
+to red for effect:
+
+![Los Santos at night with every street light red](docs/media/lods.jpg)
+
 ## Install
 
 1. Download `VLights.asi` from the
@@ -32,6 +39,8 @@ cosmetic plugin is your call, not the plugin's.
 Press **F10** in-game for the menu. It floats over the game as its own
 small window; the camera is locked while it is open so the mouse does not
 move your view.
+
+![The VLights menu over the game](docs/media/menu.png)
 
 - **Target colour** with presets: cool LED, neutral, warm LED, and a
   bright green for checking coverage.
@@ -98,3 +107,8 @@ for changes to game hooks are in `CONTRIBUTING.md`.
 `docs/` holds the reference material: how each kind of light works and is
 hooked, the FiveM and engine behaviour that shaped the design, the
 diagnostics, and the development notes. Start at `docs/README.md`.
+
+## Licence
+
+MIT, see `LICENSE`. Bundles MinHook (BSD 2-Clause) and Dear ImGui (MIT)
+under `third_party/`.
