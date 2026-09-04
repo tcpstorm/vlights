@@ -14,7 +14,7 @@ Everything the plugin can tell you, and how to read a crash.
 
 Always logged (debug or not): startup lines, hook installation, F9
 `stats:` and `textures:` lines, `unload detour:` counts, config
-warnings, and anything that failed.
+warnings, the `update check:` outcome, and anything that failed.
 
 ## Reading the F9 block
 

@@ -22,8 +22,10 @@
 #include "color/recolor.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
+#include "plugin/update.h"
 
 #include <windows.h>
+#include <shellapi.h>
 #include <d3d11.h>
 #include <dxgi.h>
 
@@ -299,7 +301,17 @@ namespace
 
 		if (ImGui::Begin("VLights", nullptr, flags))
 		{
-			ImGui::SeparatorText("VLights");
+			ImGui::SeparatorText("VLights " VLIGHTS_VERSION);
+			{
+				std::string latest, url;
+				if (vlights::update::Available(latest, url))
+				{
+					ImGui::TextColored(ImVec4(1.f, 0.85f, 0.3f, 1.f), "Update available: %s (running " VLIGHTS_VERSION ")", latest.c_str());
+					ImGui::SameLine();
+					if (ImGui::SmallButton("Open releases page"))
+						ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+				}
+			}
 			bool changed = false;
 
 			changed |= ImGui::Checkbox("Enabled", &cfg.match.enabled);
@@ -393,6 +405,7 @@ namespace
 			ImGui::TextDisabled("Models: %llu with %llu lights, %llu recolored at load",
 				(unsigned long long)st.nearModels, (unsigned long long)st.nearLights, (unsigned long long)st.nearRecolored);
 			ImGui::TextDisabled(g_mouseSuspended ? "Camera locked while this window is open." : "Camera not locked (no raw mouse registration found).");
+			ImGui::TextDisabled("%s", vlights::update::Status());
 
 			ImGui::Separator();
 			if (ImGui::Button("Save to ini"))

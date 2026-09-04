@@ -144,6 +144,11 @@ namespace vlights
 		s += "# are logged (model hash, extensions, original colour). 0 0 = off.\n";
 		s += "probe = " + FloatText(cfg.probeX) + " " + FloatText(cfg.probeY) + " " + FloatText(cfg.probeRadius) + "\n";
 		s += "\n";
+		s += "# update_check: once at startup, ask api.github.com for the latest release\n";
+		s += "# and show a notice in the menu if it is newer. Nothing is downloaded or\n";
+		s += "# installed, nothing else is sent. 0 = never contact anything.\n";
+		s += "update_check = " + std::string(cfg.updateCheck ? "1" : "0") + "\n";
+		s += "\n";
 		s += "# Hotkeys: F1-F24, or a hex/decimal virtual-key code. 0 disables.\n";
 		s += "# reload_key re-reads this file and repaints loaded lights.\n";
 		s += "# menu_key toggles the in-game menu.\n";
@@ -342,6 +347,7 @@ namespace vlights
 			else if (key == "near_enabled")   ok = ParseBool(val, cfg.nearEnabled);
 			else if (key == "near_log")       ok = ParseBool(val, cfg.nearLog);
 			else if (key == "textures")       ok = ParseBool(val, cfg.texturesEnabled);
+			else if (key == "update_check")   ok = ParseBool(val, cfg.updateCheck);
 			else if (key == "texture_names")
 			{
 				cfg.textureNames.clear();

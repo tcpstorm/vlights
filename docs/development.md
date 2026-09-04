@@ -71,7 +71,9 @@ will let the build load.)
 ```
 src/main.cpp            DllMain, startup, hotkey/worker thread
 src/plugin/             config state + ini (config.*), logger (log.*),
-                        the interface hooks and menu share (plugin.h/.cpp)
+                        the interface hooks and menu share (plugin.h/.cpp),
+                        the release check (update.*: one WinHTTP GET of
+                        api.github.com/repos/<owner>/<repo>/releases/latest)
 src/color/recolor.h     colour math (pure, header-only, unit-tested)
 src/hook/pattern.*      byte-pattern scanner, game build + vtable shift
 res/version.h.in        template for the generated version header
