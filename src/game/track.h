@@ -3,7 +3,8 @@
 // in place ("live repaint").
 //
 // One registry per streaming store kind (ymap, ydr, yft, ydd). Each store's
-// strStreamingModule::Remove (vtable slot 3 on GTA V per Cfx's Streaming.h)
+// strStreamingModule::Remove (base slot 3 per Cfx's Streaming.h, +6 on
+// builds >= 2802, see hook/pattern.h)
 // is detoured *by code*, with the address read from the store's vtable, so
 // an unloading slot is dropped before the game frees the object. No vtable
 // is ever written to: FiveM's anti-cheat terminated the game when an
@@ -52,6 +53,8 @@ namespace lodlight::track
 	Totals ReapplyAll(const Config& cfg);
 
 	uint64_t CountLoaded();
+	// How often the Remove detour fired, and how often it dropped a tracked slot.
+	void RemoveStats(uint64_t& calls, uint64_t& dropped);
 
 	// Visit every object of kind `k` still loaded (liveness checked against
 	// the pool first). Any thread; the registry lock is held during the walk.

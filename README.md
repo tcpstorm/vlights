@@ -74,7 +74,8 @@ against the ymap store the map hook already receives:
    "DrawableStore", "FragmentStore", "DwdStore"); that is how the `ydr`,
    `yft` and `ydd` stores are picked. There is no extension string.
 3. The streaming engine completes every load with `call [vtable+0x68]`
-   (slot 13, args: store, slot index), read off a stack trace inside the
+   (slot 13 = `SetResource`, base slot 7 plus the 2802 shift; args: store,
+   slot index), read off a stack trace inside the
    ymap hook. On the model stores that slot is one shared 22-byte stub
    (`sub rsp,28h; mov rax,[rcx]; mov r8,[r8+8]; call [rax+158h]; ...`).
    It is detoured by code with a thunk that passes all argument registers
@@ -90,8 +91,9 @@ against the ymap store the map hook already receives:
    setting are left alone.
 
 **Never call vtable slot 8 on the model stores expecting a read-only
-`GetPtr`.** It is not one there: it wrote through a null array at the slot
-index and crashed the game (three identical `CInstanceListAssetLoader::Init`
+`GetPtr`.** With the 2802 shift slot 8 is `FindSlot(uint32_t* id, name)`,
+which writes its result through the "index" we passed as a pointer: it
+crashed the game (three identical `CInstanceListAssetLoader::Init`
 crashes, dump analysed). Slots 5 (`Load`) and 7 (`SetResource`) are shared
 base-class stubs used by every store during session init; hooking them
 crashed the game too. Live repaint covers model lights through the same
@@ -265,8 +267,10 @@ and `kFinishLoadingOffset` in `src/GameStructs.h`.
   anti-cheat (adhesive) terminated the game about eight seconds later with an
   "Early-exit trap" (the crash dump shows adhesive on the main thread right
   before the trap). The current build instead detours the code of
-  `strStreamingModule::Remove` (address read from the ymap store's vtable,
-  slot 3 per Cfx's `Streaming.h`), the same kind of `.text` detour as the
+  `strStreamingModule::Remove` (address read from the ymap store's vtable:
+  base slot 3 per Cfx's `Streaming.h`, plus the six-slot shift that
+  `XBR_VIRTUAL_BASE_2802` documents for builds 2802 and newer, so slot 9 on
+  b3751), the same kind of `.text` detour as the
   load hook, which adhesive tolerates. Before every repaint write the block
   is also checked read-only against the store's asset pool (`atPoolBase` at
   store+56), so a freed slot can never be touched. `live_repaint = 0`

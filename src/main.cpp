@@ -15,6 +15,8 @@
 // FiveM stubs out the Toolhelp snapshot anyway).
 #include "game/lod_lights.h"
 #include "game/near_lights.h"
+#include "game/track.h"
+#include "hook/pattern.h"
 #include "plugin/config.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
@@ -65,6 +67,9 @@ namespace
 						(unsigned long long)st.calls, (unsigned long long)st.blocksWithLights, (unsigned long long)st.lights,
 						(unsigned long long)st.recolored, (unsigned long long)st.nearModels, (unsigned long long)st.nearLights,
 						(unsigned long long)st.nearRecolored, (unsigned long long)st.loadedNow);
+					uint64_t rmCalls = 0, rmDropped = 0;
+					lodlight::track::RemoveStats(rmCalls, rmDropped);
+					lodlight::Log("unload detour: fired %llu times, dropped %llu tracked slots", (unsigned long long)rmCalls, (unsigned long long)rmDropped);
 					lodlight::Log("unmatched warm light colours so far:%s", lodlight::nearlights::UnmatchedWarmSummary().c_str());
 					if (lodlight::ReloadConfigFromDisk("hotkey"))
 						lodlight::ReapplyAll();
@@ -87,7 +92,7 @@ namespace
 		const std::wstring dir = PluginDir();
 		lodlight::SetConfigPath(dir + L"\\lodlight_recolor.ini");
 		lodlight::LogInit(dir + L"\\lodlight_recolor.log");
-		lodlight::Log("LodLightRecolor " LODLIGHT_VERSION " starting (thread 0x%lX)", GetCurrentThreadId());
+		lodlight::Log("LodLightRecolor " LODLIGHT_VERSION " starting (thread 0x%lX, game build %d, streaming vtable shift %d)", GetCurrentThreadId(), lodlight::GameBuild(), lodlight::StreamingVtableShift());
 
 		if (!lodlight::EnsureDefaultConfig(lodlight::ConfigPath()))
 			lodlight::Log("could not write default config to %ls", lodlight::ConfigPath().c_str());

@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string>
 
-#define LODLIGHT_VERSION "0.15.1"
+#define LODLIGHT_VERSION "0.15.2"
 
 namespace lodlight
 {

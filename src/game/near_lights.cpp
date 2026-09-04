@@ -68,8 +68,10 @@ namespace lodlight::nearlights
 		constexpr size_t kManagerScanSpan = 0x1000;
 		constexpr size_t kStoreNameOffsetMax = 64;
 		constexpr size_t kPoolOffset = 56;
-		constexpr int kSlotRemove = 3;
-		constexpr int kSlotLoadComplete = 13;
+		// strStreamingModule::SetResource (base slot 7 + the 2802 shift): the
+		// call that publishes a finished load. See hook/pattern.h.
+		const int kSlotRemove = 3 + StreamingVtableShift();       // strStreamingModule::Remove (unload)
+		const int kSlotLoadComplete = 7 + StreamingVtableShift(); // strStreamingModule::SetResource
 
 		constexpr size_t kDrawableNamePtr = 0xA8;
 		constexpr size_t kDrawableLightsPtr = 0xB0;
