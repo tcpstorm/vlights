@@ -1,6 +1,7 @@
 // plugin.cpp - config state shared by the hooks, the menu and the hotkeys;
 // live repaint; statistics.
 #include "plugin/plugin.h"
+#include "plugin/timing.h"
 #include "color/recolor.h"
 #include "game/lod_lights.h"
 #include "game/near_lights.h"
@@ -11,6 +12,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <memory>
 #include <atomic>
 
 extern "C" int mh_vlights_freeze_method; // from the patched MinHook
@@ -45,12 +47,19 @@ namespace vlights
 		return g_configPath;
 	}
 
-	Config GetConfig()
+	static std::shared_ptr<const Config> g_configPtr = std::make_shared<const Config>();
+
+	ConfigPtr GetConfigPtr()
 	{
 		AcquireSRWLockShared(&g_configLock);
-		Config c = g_config;
+		ConfigPtr p = g_configPtr;
 		ReleaseSRWLockShared(&g_configLock);
-		return c;
+		return p;
+	}
+
+	Config GetConfig()
+	{
+		return *GetConfigPtr();
 	}
 
 	void SetConfig(const Config& in)
@@ -65,8 +74,10 @@ namespace vlights
 
 		SetDebugLogging(cfg.debug);
 
+		std::shared_ptr<const Config> next = std::make_shared<const Config>(cfg);
 		AcquireSRWLockExclusive(&g_configLock);
 		g_config = cfg;
+		g_configPtr = std::move(next);
 		ReleaseSRWLockExclusive(&g_configLock);
 	}
 
@@ -97,6 +108,7 @@ namespace vlights
 	void ReapplyAll()
 	{
 		const Config cfg = GetConfig();
+		timing::Scope timed(timing::Repaint);
 		track::Totals t = track::ReapplyAll(cfg);
 		textures::RequestRepaint();
 		g_lastRepaintLights = t.lights;

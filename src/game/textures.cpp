@@ -23,6 +23,7 @@
 #include "plugin/config.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
+#include "plugin/timing.h"
 
 #include <windows.h>
 #include <d3d11.h>
@@ -284,14 +285,61 @@ namespace vlights::textures
 			return static_cast<uint16_t>(((r * 31 + 127) / 255) << 11 | ((g * 63 + 127) / 255) << 5 | ((b * 31 + 127) / 255));
 		}
 
-		bool Recolour565(uint16_t& c, const MatchParams& m, bool force)
+		uint16_t Recolour565Slow(uint16_t c, const MatchParams& m, bool force)
 		{
 			unsigned r, g, b;
 			Rgb565(c, r, g, b);
 			uint32_t packed = (r << 16) | (g << 8) | b;
 			if (!(force ? ForceRecolor(packed, m) : Recolor(packed, m)))
+				return c;
+			return Pack565((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF);
+		}
+
+		// An RGB565 endpoint has 65536 possible values and a texture repeats a
+		// few hundred of them tens of thousands of times, so the colour maths
+		// runs once per distinct value: two lookup tables (matched / forced),
+		// filled lazily, thrown away when the match parameters change. Reads are
+		// lock-free on a filled entry; a miss takes the lock to fill it.
+		struct Lut
+		{
+			const MatchParams* params = nullptr;
+			std::vector<uint16_t> out;   // 65536
+			std::vector<uint8_t> known;  // 65536 flags
+		};
+		SRWLOCK g_lutLock = SRWLOCK_INIT;
+		Lut g_luts[2];
+
+		uint16_t Recolour565Cached(uint16_t c, const MatchParams& m, bool force)
+		{
+			Lut& lut = g_luts[force ? 1 : 0];
+			AcquireSRWLockShared(&g_lutLock);
+			if (lut.params == &m && lut.known[c])
+			{
+				const uint16_t r = lut.out[c];
+				ReleaseSRWLockShared(&g_lutLock);
+				return r;
+			}
+			ReleaseSRWLockShared(&g_lutLock);
+			const uint16_t r = Recolour565Slow(c, m, force);
+			AcquireSRWLockExclusive(&g_lutLock);
+			if (lut.params != &m)
+			{
+				lut.params = &m;
+				lut.out.assign(65536, 0);
+				lut.known.assign(65536, 0);
+			}
+			lut.out[c] = r;
+			lut.known[c] = 1;
+			ReleaseSRWLockExclusive(&g_lutLock);
+			return r;
+		}
+
+		bool Recolour565(uint16_t& c, const MatchParams& m, bool force)
+		{
+			const uint16_t r = Recolour565Cached(c, m, force);
+			if (r == c)
 				return false;
-			c = Pack565((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF);
+			c = r;
 			return true;
 		}
 
@@ -588,7 +636,8 @@ namespace vlights::textures
 		// thread.
 		void RepaintAll()
 		{
-			const Config cfg = GetConfig();
+			const ConfigPtr cfgPtr = GetConfigPtr();
+			const Config& cfg = *cfgPtr;
 			const bool paint = cfg.texturesEnabled && cfg.match.enabled;
 			unsigned rebuilt = 0, restored = 0, skipped = 0, failed = 0;
 			std::vector<uint8_t> work;
@@ -893,8 +942,10 @@ namespace vlights::textures
 
 		void OnPlace(StoreKind kind, uint32_t object, void* blockMap)
 		{
+			timing::Scope timed(timing::Placement);
 			const uint64_t n = ++g_placements;
-			const Config cfg = GetConfig();
+			const ConfigPtr cfgPtr = GetConfigPtr();
+			const Config& cfg = *cfgPtr;
 			if (!cfg.texturesEnabled || !cfg.match.enabled)
 				return;
 			Map map;

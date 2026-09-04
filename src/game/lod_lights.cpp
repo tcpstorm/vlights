@@ -11,6 +11,7 @@
 #include "hook/pattern.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
+#include "plugin/timing.h"
 
 #include <windows.h>
 #include <tlhelp32.h>
@@ -109,7 +110,9 @@ namespace vlights::lodlights
 
 		void Process(void* store, int32_t idx, CMapData* md)
 		{
-			const Config cfg = GetConfig();
+			timing::Scope timed(timing::MapBlock);
+			const ConfigPtr cfgPtr = GetConfigPtr();
+			const Config& cfg = *cfgPtr;
 			CDistantLODLight& dl = md->distantLodLights;
 
 			// The first calls are logged regardless of content so "hook never

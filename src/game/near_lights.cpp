@@ -49,6 +49,7 @@
 #include "hook/pattern.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
+#include "plugin/timing.h"
 
 #include <windows.h>
 #include <MinHook.h>
@@ -57,6 +58,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <memory>
 #include <unordered_set>
 #include <vector>
 
@@ -575,6 +577,7 @@ namespace vlights::nearlights
 		// get their per-placement light overrides forced (all_streetlights).
 		SRWLOCK g_lampHashLock = SRWLOCK_INIT;
 		std::unordered_set<uint32_t> g_lampHashes;
+		std::atomic<uint64_t> g_lampHashVersion{ 1 };
 
 		void NoteLampModel(const char* modelName)
 		{
@@ -587,21 +590,44 @@ namespace vlights::nearlights
 				*dot = 0;
 			const uint32_t h = Joaat(buf);
 			AcquireSRWLockExclusive(&g_lampHashLock);
-			g_lampHashes.insert(h);
+			const bool added = g_lampHashes.insert(h).second;
 			ReleaseSRWLockExclusive(&g_lampHashLock);
+			if (added)
+				g_lampHashVersion++;
 		}
 
-		std::unordered_set<uint32_t> LampHashSet(const Config& cfg)
+		// Cached: rebuilt only when the config snapshot or the runtime set changed.
+		SRWLOCK g_lampSetLock = SRWLOCK_INIT;
+		std::shared_ptr<const std::unordered_set<uint32_t>> g_lampSet;
+		const Config* g_lampSetCfg = nullptr;
+		uint64_t g_lampSetVersion = 0;
+
+		std::shared_ptr<const std::unordered_set<uint32_t>> LampHashSet(const Config& cfg)
 		{
-			std::unordered_set<uint32_t> out;
-			if (!cfg.allStreetLights)
-				return out;
-			for (const std::string& m : cfg.streetlightModels)
-				if (!m.empty())
-					out.insert(Joaat(m.c_str()));
-			AcquireSRWLockShared(&g_lampHashLock);
-			out.insert(g_lampHashes.begin(), g_lampHashes.end());
-			ReleaseSRWLockShared(&g_lampHashLock);
+			const uint64_t ver = g_lampHashVersion.load();
+			AcquireSRWLockShared(&g_lampSetLock);
+			if (g_lampSet && g_lampSetCfg == &cfg && g_lampSetVersion == ver)
+			{
+				auto p = g_lampSet;
+				ReleaseSRWLockShared(&g_lampSetLock);
+				return p;
+			}
+			ReleaseSRWLockShared(&g_lampSetLock);
+			auto out = std::make_shared<std::unordered_set<uint32_t>>();
+			if (cfg.allStreetLights)
+			{
+				for (const std::string& m : cfg.streetlightModels)
+					if (!m.empty())
+						out->insert(Joaat(m.c_str()));
+				AcquireSRWLockShared(&g_lampHashLock);
+				out->insert(g_lampHashes.begin(), g_lampHashes.end());
+				ReleaseSRWLockShared(&g_lampHashLock);
+			}
+			AcquireSRWLockExclusive(&g_lampSetLock);
+			g_lampSet = out;
+			g_lampSetCfg = &cfg;
+			g_lampSetVersion = ver;
+			ReleaseSRWLockExclusive(&g_lampSetLock);
 			return out;
 		}
 
@@ -763,6 +789,7 @@ namespace vlights::nearlights
 		{
 			if (!obj)
 				return;
+			timing::Scope timed(timing::Model);
 			if (DebugLogging() && h.kind != track::Ydd)
 			{
 				char name[48];
@@ -792,7 +819,8 @@ namespace vlights::nearlights
 				return;
 			}
 
-			const Config cfg = GetConfig();
+			const ConfigPtr cfgPtr = GetConfigPtr();
+			const Config& cfg = *cfgPtr;
 			const bool force = ForcedModel(h.kind, obj, cfg);
 			std::vector<uint32_t> originals;
 			originals.reserve(attrs.size() * 2);
@@ -903,6 +931,40 @@ namespace vlights::nearlights
 			return (PlausiblePtr(t) && Readable(t, 16)) ? t : nullptr;
 		}
 
+		// Is this extension a CExtensionDefLightEffect? Answered once per vtable:
+		// the type getter is a virtual call plus a heap read, and a map block can
+		// carry thousands of extensions of a handful of types.
+		SRWLOCK g_extTypeLock = SRWLOCK_INIT;
+		struct ExtTypeEntry { const void* vtable; bool light; };
+		ExtTypeEntry g_extTypes[32];
+		int g_extTypeCount = 0;
+
+		bool IsLightEffect(const void* ext)
+		{
+			const void* vt = *static_cast<const void* const*>(ext);
+			AcquireSRWLockShared(&g_extTypeLock);
+			for (int i = 0; i < g_extTypeCount; ++i)
+			{
+				if (g_extTypes[i].vtable == vt)
+				{
+					const bool r = g_extTypes[i].light;
+					ReleaseSRWLockShared(&g_extTypeLock);
+					return r;
+				}
+			}
+			ReleaseSRWLockShared(&g_extTypeLock);
+			const char* type = ExtensionType(ext);
+			const bool light = type && *reinterpret_cast<const uint32_t*>(type + kParStructureNameHash) == kLightEffectHash;
+			if (type)
+			{
+				AcquireSRWLockExclusive(&g_extTypeLock);
+				if (g_extTypeCount < 32)
+					g_extTypes[g_extTypeCount++] = { vt, light };
+				ReleaseSRWLockExclusive(&g_extTypeLock);
+			}
+			return light;
+		}
+
 		// Every light-effect CLightAttrDef reachable from a CMapTypes, in a
 		// deterministic order. The optional survey arrays collect the
 		// extension type hashes met.
@@ -1006,7 +1068,8 @@ namespace vlights::nearlights
 				return;
 			g_typesWithLights++;
 
-			const Config cfg = GetConfig();
+			const ConfigPtr cfgPtr = GetConfigPtr();
+			const Config& cfg = *cfgPtr;
 			std::vector<uint32_t> originals;
 			originals.reserve(defs.size() * 2);
 			uint32_t changed = 0;
@@ -1351,10 +1414,9 @@ namespace vlights::nearlights
 			for (uint16_t x = 0; x < nExt; ++x)
 			{
 				const void* ext = exts[x];
-				if (!ObjectValid(ext, 48))
+				if (validate ? !ObjectValid(ext, 48) : !PlausiblePtr(ext))
 					continue;
-				const char* type = ExtensionType(ext);
-				if (!type || *reinterpret_cast<const uint32_t*>(type + kParStructureNameHash) != kLightEffectHash)
+				if (!IsLightEffect(ext))
 					continue;
 				uint8_t* defs = Read<uint8_t*>(ext, kLightEffectInstances);
 				uint16_t nDefs = Read<uint16_t>(ext, kLightEffectInstances + 8);
@@ -1377,8 +1439,8 @@ namespace vlights::nearlights
 			return 0;
 		std::vector<uint8_t*> defs;
 		std::vector<bool> forced;
-		const std::unordered_set<uint32_t> lamps = LampHashSet(cfg);
-		CollectEntityLights(entities, count, defs, false, &lamps, &forced);
+		const auto lamps = LampHashSet(cfg);
+		CollectEntityLights(entities, count, defs, false, lamps.get(), &forced);
 		if (defs.empty())
 			return 0;
 		uint32_t changed = 0;
@@ -1410,8 +1472,8 @@ namespace vlights::nearlights
 	{
 		std::vector<uint8_t*> defs;
 		std::vector<bool> forced;
-		const std::unordered_set<uint32_t> lamps = LampHashSet(cfg);
-		if (!CollectEntityLights(entities, count, defs, true, &lamps, &forced))
+		const auto lamps = LampHashSet(cfg);
+		if (!CollectEntityLights(entities, count, defs, true, lamps.get(), &forced))
 			return false;
 		if (originals.size() != offset + defs.size() * 2)
 			return false;
