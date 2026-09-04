@@ -42,7 +42,7 @@ namespace
 	// Avoid __uuidof so this builds identically under mingw and MSVC.
 	const GUID kIID_ID3D11Texture2D = { 0x6f15aaf2, 0xd208, 0x4e89, { 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f, 0x9c } };
 
-	constexpr UINT WM_LODLIGHT_TOGGLE = WM_APP + 1;
+	constexpr UINT WM_VLIGHTS_TOGGLE = WM_APP + 1;
 	constexpr int kWidth = 470;
 	constexpr int kHeight = 720;
 	constexpr DWORD kFrameMs = 16; // ~60 fps cap for the menu
@@ -60,7 +60,7 @@ namespace
 	UINT g_resizeW = 0, g_resizeH = 0;
 
 	// Menu-local copy of the config; pushed to the core on every change.
-	lodlight::Config g_menuCfg;
+	vlights::Config g_menuCfg;
 	bool g_menuCfgLoaded = false;
 	std::string g_status;
 
@@ -76,14 +76,14 @@ namespace
 		UINT n = 0;
 		if (GetRegisteredRawInputDevices(nullptr, &n, sizeof(RAWINPUTDEVICE)) != 0 || n == 0)
 		{
-			lodlight::Log("menu: no raw input devices registered in this process; camera lock not needed");
+			vlights::Log("menu: no raw input devices registered in this process; camera lock not needed");
 			return;
 		}
 		std::vector<RAWINPUTDEVICE> all(n);
 		UINT got = GetRegisteredRawInputDevices(all.data(), &n, sizeof(RAWINPUTDEVICE));
 		if (got == static_cast<UINT>(-1))
 		{
-			lodlight::Log("menu: GetRegisteredRawInputDevices failed, error=%lu", GetLastError());
+			vlights::Log("menu: GetRegisteredRawInputDevices failed, error=%lu", GetLastError());
 			return;
 		}
 		g_savedMouse.clear();
@@ -92,7 +92,7 @@ namespace
 				g_savedMouse.push_back(all[i]);
 		if (g_savedMouse.empty())
 		{
-			lodlight::Log("menu: the game has no raw mouse registration; camera lock not needed");
+			vlights::Log("menu: the game has no raw mouse registration; camera lock not needed");
 			return;
 		}
 		RAWINPUTDEVICE remove{};
@@ -102,11 +102,11 @@ namespace
 		remove.hwndTarget = nullptr;
 		if (!RegisterRawInputDevices(&remove, 1, sizeof(remove)))
 		{
-			lodlight::Log("menu: could not unregister raw mouse input, error=%lu", GetLastError());
+			vlights::Log("menu: could not unregister raw mouse input, error=%lu", GetLastError());
 			return;
 		}
 		g_mouseSuspended = true;
-		lodlight::Log("menu: camera locked (raw mouse input suspended; %u registration(s) saved, flags 0x%lX)",
+		vlights::Log("menu: camera locked (raw mouse input suspended; %u registration(s) saved, flags 0x%lX)",
 			(unsigned)g_savedMouse.size(), (unsigned long)g_savedMouse[0].dwFlags);
 	}
 
@@ -115,9 +115,9 @@ namespace
 		if (!g_mouseSuspended)
 			return;
 		if (!RegisterRawInputDevices(g_savedMouse.data(), static_cast<UINT>(g_savedMouse.size()), sizeof(RAWINPUTDEVICE)))
-			lodlight::Log("menu: could not restore raw mouse input, error=%lu", GetLastError());
+			vlights::Log("menu: could not restore raw mouse input, error=%lu", GetLastError());
 		else
-			lodlight::Log("menu: camera unlocked (raw mouse input restored)");
+			vlights::Log("menu: camera unlocked (raw mouse input restored)");
 		g_mouseSuspended = false;
 	}
 
@@ -168,7 +168,7 @@ namespace
 		}
 		if (FAILED(hr))
 		{
-			lodlight::Log("menu: D3D11CreateDeviceAndSwapChain failed, hr=0x%08lX", (unsigned long)hr);
+			vlights::Log("menu: D3D11CreateDeviceAndSwapChain failed, hr=0x%08lX", (unsigned long)hr);
 			return false;
 		}
 		return CreateRenderTarget();
@@ -252,7 +252,7 @@ namespace
 		case WM_CLOSE:
 			HideMenu(hwnd);
 			return 0;
-		case WM_LODLIGHT_TOGGLE:
+		case WM_VLIGHTS_TOGGLE:
 			if (g_visible.load())
 				HideMenu(hwnd);
 			else
@@ -272,24 +272,24 @@ namespace
 
 	void SetTarget(float r, float g, float b)
 	{
-		g_menuCfg.match.target = lodlight::RGB{ r, g, b };
+		g_menuCfg.match.target = vlights::RGB{ r, g, b };
 	}
 
 	void Push()
 	{
-		lodlight::SetConfig(g_menuCfg);
-		lodlight::ReapplyAll();
-		g_menuCfg = lodlight::GetConfig(); // pick up derived/clamped fields
+		vlights::SetConfig(g_menuCfg);
+		vlights::ReapplyAll();
+		g_menuCfg = vlights::GetConfig(); // pick up derived/clamped fields
 	}
 
 	void DrawMenu()
 	{
 		if (!g_menuCfgLoaded)
 		{
-			g_menuCfg = lodlight::GetConfig();
+			g_menuCfg = vlights::GetConfig();
 			g_menuCfgLoaded = true;
 		}
-		lodlight::Config& cfg = g_menuCfg;
+		vlights::Config& cfg = g_menuCfg;
 
 		const ImGuiViewport* vp = ImGui::GetMainViewport();
 		ImGui::SetNextWindowPos(vp->WorkPos);
@@ -297,9 +297,9 @@ namespace
 		ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
 			| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
 
-		if (ImGui::Begin("LOD Light Recolor", nullptr, flags))
+		if (ImGui::Begin("VLights", nullptr, flags))
 		{
-			ImGui::SeparatorText("LOD Light Recolor");
+			ImGui::SeparatorText("VLights");
 			bool changed = false;
 
 			changed |= ImGui::Checkbox("Enabled", &cfg.match.enabled);
@@ -324,8 +324,8 @@ namespace
 			changed |= ImGui::SliderFloat("Blend", &cfg.match.blend, 0.f, 1.f, "%.2f");
 			changed |= ImGui::Checkbox("Keep each light's brightness", &cfg.match.keepBrightness);
 			changed |= ImGui::Checkbox("Also recolour nearby lamp lights (model + entity lights)", &cfg.nearEnabled);
-			ImGui::TextDisabled("Nearby lamps take a new colour as they stream in again; LOD tiers repaint instantly.");
-			if (cfg.nearEnabled && !lodlight::NearAvailable())
+			ImGui::TextDisabled("LOD tiers and lantern textures repaint instantly; nearby lamp lights as they stream in again.");
+			if (cfg.nearEnabled && !vlights::NearAvailable())
 			{
 				ImGui::SameLine();
 				ImGui::TextDisabled("(needs a game restart)");
@@ -336,11 +336,11 @@ namespace
 			float source[3] = { cfg.source.r / 255.f, cfg.source.g / 255.f, cfg.source.b / 255.f };
 			if (ImGui::ColorEdit3("Match colour", source))
 			{
-				cfg.source = lodlight::RGB{ source[0] * 255.f, source[1] * 255.f, source[2] * 255.f };
+				cfg.source = vlights::RGB{ source[0] * 255.f, source[1] * 255.f, source[2] * 255.f };
 				changed = true;
 			}
 			ImGui::SameLine();
-			ImGui::TextDisabled("(hue %.0f)", lodlight::ToHSV(cfg.source).h);
+			ImGui::TextDisabled("(hue %.0f)", vlights::ToHSV(cfg.source).h);
 
 			changed |= ImGui::SliderFloat("Hue window", &cfg.match.hueWindow, 0.f, 90.f, "%.0f deg");
 			changed |= ImGui::SliderFloat("Min saturation", &cfg.match.minSaturation, 0.f, 1.f, "%.2f");
@@ -352,7 +352,7 @@ namespace
 				float source2[3] = { cfg.source2.r / 255.f, cfg.source2.g / 255.f, cfg.source2.b / 255.f };
 				if (ImGui::ColorEdit3("Cream colour", source2))
 				{
-					cfg.source2 = lodlight::RGB{ source2[0] * 255.f, source2[1] * 255.f, source2[2] * 255.f };
+					cfg.source2 = vlights::RGB{ source2[0] * 255.f, source2[1] * 255.f, source2[2] * 255.f };
 					changed = true;
 				}
 				changed |= ImGui::SliderFloat("Hue window##2", &cfg.match.hueWindow2, 0.f, 45.f, "%.0f deg");
@@ -365,7 +365,7 @@ namespace
 				Push();
 
 			ImGui::SeparatorText("Status");
-			lodlight::Stats st = lodlight::GetStats();
+			vlights::Stats st = vlights::GetStats();
 			ImGui::Text("Loaded objects: %llu", (unsigned long long)st.loadedNow);
 			ImGui::Text("Lights now: %llu   recolored: %llu",
 				(unsigned long long)st.lastRepaintLights, (unsigned long long)st.lastRepaintRecolored);
@@ -379,14 +379,14 @@ namespace
 			if (ImGui::Button("Save to ini"))
 			{
 				std::string err;
-				g_status = lodlight::SaveConfigToDisk(err) ? "Saved." : ("Save failed: " + err);
+				g_status = vlights::SaveConfigToDisk(err) ? "Saved." : ("Save failed: " + err);
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Reload ini"))
 			{
-				if (lodlight::ReloadConfigFromDisk("menu"))
+				if (vlights::ReloadConfigFromDisk("menu"))
 				{
-					lodlight::ReapplyAll();
+					vlights::ReapplyAll();
 					g_menuCfgLoaded = false;
 					g_status = "Reloaded from ini.";
 				}
@@ -397,7 +397,7 @@ namespace
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Close"))
-				PostMessageW(g_hwnd, WM_LODLIGHT_TOGGLE, 0, 0);
+				PostMessageW(g_hwnd, WM_VLIGHTS_TOGGLE, 0, 0);
 
 			if (!g_status.empty())
 				ImGui::TextWrapped("%s", g_status.c_str());
@@ -443,20 +443,20 @@ namespace
 		wc.lpfnWndProc = WndProc;
 		wc.hInstance = GetModuleHandleW(nullptr);
 		wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-		wc.lpszClassName = L"LodLightRecolorMenu";
+		wc.lpszClassName = L"VLightsMenu";
 		if (!RegisterClassExW(&wc))
 		{
-			lodlight::Log("menu: RegisterClassEx failed, error=%lu", GetLastError());
+			vlights::Log("menu: RegisterClassEx failed, error=%lu", GetLastError());
 			g_failed = true;
 			return 0;
 		}
 
-		g_hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, wc.lpszClassName, L"LOD Light Recolor",
+		g_hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, wc.lpszClassName, L"VLights",
 			WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME, 100, 100, kWidth, kHeight,
 			nullptr, nullptr, wc.hInstance, nullptr);
 		if (!g_hwnd)
 		{
-			lodlight::Log("menu: CreateWindowEx failed, error=%lu", GetLastError());
+			vlights::Log("menu: CreateWindowEx failed, error=%lu", GetLastError());
 			g_failed = true;
 			return 0;
 		}
@@ -483,13 +483,13 @@ namespace
 
 		if (!ImGui_ImplWin32_Init(g_hwnd) || !ImGui_ImplDX11_Init(g_device, g_context))
 		{
-			lodlight::Log("menu: ImGui backend init failed");
+			vlights::Log("menu: ImGui backend init failed");
 			g_failed = true;
 			return 0;
 		}
 
 		g_ready = true;
-		lodlight::Log("menu: window ready (own D3D11 device, no game hooks)");
+		vlights::Log("menu: window ready (own D3D11 device, no game hooks)");
 
 		MSG msg{};
 		for (;;)
@@ -524,7 +524,7 @@ namespace
 	}
 }
 
-namespace lodlight
+namespace vlights
 {
 	bool MenuInit()
 	{
@@ -542,7 +542,7 @@ namespace lodlight
 	{
 		if (!g_ready.load() || g_failed.load() || !g_hwnd)
 			return;
-		PostMessageW(g_hwnd, WM_LODLIGHT_TOGGLE, 0, 0);
+		PostMessageW(g_hwnd, WM_VLIGHTS_TOGGLE, 0, 0);
 	}
 
 	bool MenuVisible()

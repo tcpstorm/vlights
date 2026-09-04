@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-namespace lodlight
+namespace vlights
 {
 	// Truncates and opens the log file once; it stays open (one flush per
 	// line) so logging never pays for an open/close, which the antivirus

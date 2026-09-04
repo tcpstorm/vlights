@@ -43,6 +43,7 @@
 //     installed from DllMain: the archetype store's FinishLoading is the
 //     sibling of the ymap one, found from the shared call-site bytes.
 #include "game/near_lights.h"
+#include "game/textures.h"
 #include "color/recolor.h"
 #include "game/track.h"
 #include "hook/pattern.h"
@@ -58,7 +59,7 @@
 #include <string>
 #include <vector>
 
-namespace lodlight::nearlights
+namespace vlights::nearlights
 {
 	namespace
 	{
@@ -640,10 +641,66 @@ namespace lodlight::nearlights
 			return out;
 		}
 
+		// Debug: the textures embedded in a placed model (drawable +0x10 =
+		// grmShaderGroup, +0x08 = its pgDictionary<grcTexture>; fragment's
+		// drawable at +0x30). Lens glow textures that live here never pass
+		// through the texture store.
+		std::string EmbeddedTextures(track::Kind kind, const void* obj)
+		{
+			const void* drawable = kind == track::Yft ? Read<const void*>(obj, kFragDrawablePtr) : (kind == track::Ydr ? obj : nullptr);
+			if (!ObjectValid(drawable, 0xC0))
+				return " (no drawable)";
+			const void* shaderGroup = Read<const void*>(drawable, 0x10);
+			if (!ObjectValid(shaderGroup, 0x40))
+				return " (no shader group)";
+			const void* txd = Read<const void*>(shaderGroup, 0x08);
+			if (!txd)
+				return " (none)";
+			if (!ObjectValid(txd, 0x40))
+				return " (txd unreadable)";
+			const void* const* entries = Read<const void* const*>(txd, 0x30);
+			const uint16_t count = Read<uint16_t>(txd, 0x38);
+			if (!PlausiblePtr(entries) || count == 0 || count > 256 || !Readable(entries, count * sizeof(void*)))
+				return " (empty)";
+			std::string out;
+			char buf[160];
+			for (uint16_t i = 0; i < count && i < 16; ++i)
+			{
+				const void* tex = entries[i];
+				if (!ObjectValid(tex, 0x90))
+				{
+					out += " [bad]";
+					continue;
+				}
+				const char* name = Read<const char*>(tex, 0x28);
+				const uint16_t w = Read<uint16_t>(tex, 0x50), hgt = Read<uint16_t>(tex, 0x52);
+				const uint32_t fmt = Read<uint32_t>(tex, 0x58);
+				char fname[8] = "fmt?";
+				if ((fmt >> 24) >= 0x20 && (fmt & 0xFF) >= 0x20)
+					snprintf(fname, sizeof(fname), "%c%c%c%c", fmt & 0xFF, (fmt >> 8) & 0xFF, (fmt >> 16) & 0xFF, fmt >> 24);
+				else
+					snprintf(fname, sizeof(fname), "f%u", fmt);
+				snprintf(buf, sizeof(buf), " %s(%ux%u %s)", (PlausiblePtr(name) && Readable(name, 48)) ? name : "?", w, hgt, fname);
+				out += buf;
+			}
+			return out;
+		}
+
 		void OnModelLoaded(StoreHook& h, uint32_t idx, void* obj)
 		{
 			if (!obj)
 				return;
+			if (DebugLogging() && h.kind != track::Ydd)
+			{
+				char name[48];
+				ModelName(h.kind, obj, name, sizeof(name));
+				for (const char* k : { "streetlight", "lamp", "light" })
+					if (strstr(name, k))
+					{
+						LogDebug("near: %s '%s' embedded textures:%s", h.ext, name, EmbeddedTextures(h.kind, obj).c_str());
+						break;
+					}
+			}
 			std::vector<uint8_t*> attrs;
 			CollectLights(h.kind, obj, attrs);
 			if (attrs.empty())
@@ -1116,6 +1173,33 @@ namespace lodlight::nearlights
 			hooked++;
 			Log("near: '%s' store %p: load-complete vtable[%d] at %p (base+0x%llX) detoured",
 				h.ext, h.store, kSlotLoadComplete, fn, (unsigned long long)(reinterpret_cast<uintptr_t>(fn) - g_base));
+		}
+
+		// Texture dictionaries: the lantern glow lives there (see textures.h).
+		if (GetConfig().texturesEnabled)
+		{
+			void* txd = nullptr;
+			for (uint32_t i = 0; i < table.count; ++i)
+			{
+				void* m = table.modules[i];
+				if (LooksLikeStore(m) && NameIs(ModuleName(m, nameOffset), "TxdStore"))
+				{
+					txd = m;
+					break;
+				}
+			}
+			const int placeSlot = 6 + StreamingVtableShift(); // strStreamingModule::PlaceResource
+			if (txd && textures::InstallPlacementHook(textures::Txd, txd, placeSlot, g_base, g_size))
+				track::WatchStore(track::Txd, txd);
+			else
+				Log("tex: no 'TxdStore' module found; lantern textures not hooked");
+			// Most lamp props embed their lens texture in the model itself, so the
+			// model stores' placement is hooked the same way.
+			const textures::StoreKind kinds[3] = { textures::Ydr, textures::Yft, textures::Ydd };
+			for (int k = 0; k < 3; ++k)
+				if (g_hooks[k].store && g_hooks[k].hooked)
+					textures::InstallPlacementHook(kinds[k], g_hooks[k].store, placeSlot, g_base, g_size);
+			track::SetRemoveListener(&textures::OnStoreRemove);
 		}
 
 		track::SetRepaint(track::Ydr, &RepaintYdr);

@@ -15,6 +15,7 @@
 // FiveM stubs out the Toolhelp snapshot anyway).
 #include "game/lod_lights.h"
 #include "game/near_lights.h"
+#include "game/textures.h"
 #include "game/track.h"
 #include "hook/pattern.h"
 #include "plugin/config.h"
@@ -40,14 +41,14 @@ namespace
 
 	DWORD WINAPI WorkerThread(LPVOID)
 	{
-		if (lodlight::GetConfig().menuKey > 0)
+		if (vlights::GetConfig().menuKey > 0)
 		{
-			if (!lodlight::MenuInit())
-				lodlight::Log("menu unavailable; ini + reload key still work");
+			if (!vlights::MenuInit())
+				vlights::Log("menu unavailable; ini + reload key still work");
 		}
 		else
 		{
-			lodlight::Log("menu disabled (menu_key = 0)");
+			vlights::Log("menu disabled (menu_key = 0)");
 		}
 
 		bool reloadWasDown = false;
@@ -55,24 +56,26 @@ namespace
 		for (;;)
 		{
 			Sleep(100);
-			const lodlight::Config cfg = lodlight::GetConfig();
+			vlights::textures::Tick();
+			const vlights::Config cfg = vlights::GetConfig();
 
 			if (cfg.reloadKey > 0)
 			{
 				bool down = (GetAsyncKeyState(cfg.reloadKey) & 0x8000) != 0;
 				if (down && !reloadWasDown)
 				{
-					lodlight::Stats st = lodlight::GetStats();
-					lodlight::Log("stats: calls=%llu blocks_with_lights=%llu lights=%llu recolored=%llu near_models=%llu near_lights=%llu near_recolored=%llu loaded_now=%llu",
+					vlights::Stats st = vlights::GetStats();
+					vlights::Log("stats: calls=%llu blocks_with_lights=%llu lights=%llu recolored=%llu near_models=%llu near_lights=%llu near_recolored=%llu loaded_now=%llu",
 						(unsigned long long)st.calls, (unsigned long long)st.blocksWithLights, (unsigned long long)st.lights,
 						(unsigned long long)st.recolored, (unsigned long long)st.nearModels, (unsigned long long)st.nearLights,
 						(unsigned long long)st.nearRecolored, (unsigned long long)st.loadedNow);
 					uint64_t rmCalls = 0, rmDropped = 0;
-					lodlight::track::RemoveStats(rmCalls, rmDropped);
-					lodlight::Log("unload detour: fired %llu times, dropped %llu tracked slots", (unsigned long long)rmCalls, (unsigned long long)rmDropped);
-					lodlight::Log("unmatched warm light colours so far:%s", lodlight::nearlights::UnmatchedWarmSummary().c_str());
-					if (lodlight::ReloadConfigFromDisk("hotkey"))
-						lodlight::ReapplyAll();
+					vlights::track::RemoveStats(rmCalls, rmDropped);
+					vlights::Log("unload detour: fired %llu times, dropped %llu tracked slots", (unsigned long long)rmCalls, (unsigned long long)rmDropped);
+					vlights::Log("unmatched warm light colours so far:%s", vlights::nearlights::UnmatchedWarmSummary().c_str());
+					vlights::Log("textures: %llu resources placed, %llu with selected textures, %llu textures recoloured (%llu blocks); %llu registered for live repaint", (unsigned long long)vlights::textures::Placements(), (unsigned long long)vlights::textures::Dictionaries(), (unsigned long long)vlights::textures::TexturesRecoloured(), (unsigned long long)vlights::textures::BlocksRecoloured(), (unsigned long long)vlights::textures::Registered());
+					if (vlights::ReloadConfigFromDisk("hotkey"))
+						vlights::ReapplyAll();
 				}
 				reloadWasDown = down;
 			}
@@ -81,7 +84,7 @@ namespace
 			{
 				bool down = (GetAsyncKeyState(cfg.menuKey) & 0x8000) != 0;
 				if (down && !menuWasDown)
-					lodlight::MenuToggle();
+					vlights::MenuToggle();
 				menuWasDown = down;
 			}
 		}
@@ -90,17 +93,17 @@ namespace
 	void Startup()
 	{
 		const std::wstring dir = PluginDir();
-		lodlight::SetConfigPath(dir + L"\\lodlight_recolor.ini");
-		lodlight::LogInit(dir + L"\\lodlight_recolor.log");
-		lodlight::Log("LodLightRecolor " LODLIGHT_VERSION " starting (thread 0x%lX, game build %d, streaming vtable shift %d)", GetCurrentThreadId(), lodlight::GameBuild(), lodlight::StreamingVtableShift());
+		vlights::SetConfigPath(dir + L"\\vlights.ini");
+		vlights::LogInit(dir + L"\\vlights.log");
+		vlights::Log("VLights " VLIGHTS_VERSION " starting (thread 0x%lX, game build %d, streaming vtable shift %d)", GetCurrentThreadId(), vlights::GameBuild(), vlights::StreamingVtableShift());
 
-		if (!lodlight::EnsureDefaultConfig(lodlight::ConfigPath()))
-			lodlight::Log("could not write default config to %ls", lodlight::ConfigPath().c_str());
-		lodlight::ReloadConfigFromDisk("startup");
+		if (!vlights::EnsureDefaultConfig(vlights::ConfigPath()))
+			vlights::Log("could not write default config to %ls", vlights::ConfigPath().c_str());
+		vlights::ReloadConfigFromDisk("startup");
 
-		if (!lodlight::lodlights::Install())
+		if (!vlights::lodlights::Install())
 		{
-			lodlight::Log("inactive");
+			vlights::Log("inactive");
 			return;
 		}
 
@@ -108,7 +111,7 @@ namespace
 		if (h)
 			CloseHandle(h);
 		else
-			lodlight::Log("could not start worker thread; hotkeys and menu disabled");
+			vlights::Log("could not start worker thread; hotkeys and menu disabled");
 	}
 }
 

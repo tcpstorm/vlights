@@ -5,7 +5,7 @@
 #include <cstdarg>
 #include <cstdio>
 
-namespace lodlight
+namespace vlights
 {
 	namespace
 	{

@@ -19,7 +19,7 @@
 #include <atomic>
 #include <vector>
 
-namespace lodlight::lodlights
+namespace vlights::lodlights
 {
 	namespace
 	{

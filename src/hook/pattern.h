@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace lodlight
+namespace vlights
 {
 	struct Pattern
 	{

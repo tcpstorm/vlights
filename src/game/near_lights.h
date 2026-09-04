@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace lodlight::nearlights
+namespace vlights::nearlights
 {
 	// Finds the ydr/yft/ydd streaming stores and detours their load-complete
 	// virtual. `knownYmapStore` is the strStreamingModule the map hook

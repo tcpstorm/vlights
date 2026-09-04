@@ -53,8 +53,6 @@ Desktop.ini
 .DS_Store
 
 # ---- scratch: screenshots, notes, local experiments ---------------------------
-exclude/
-ignore/
 scratch/
 *.png
 *.jpg

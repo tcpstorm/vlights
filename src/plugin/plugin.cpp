@@ -4,6 +4,7 @@
 #include "color/recolor.h"
 #include "game/lod_lights.h"
 #include "game/near_lights.h"
+#include "game/textures.h"
 #include "game/track.h"
 #include "plugin/log.h"
 
@@ -12,27 +13,27 @@
 #include <algorithm>
 #include <atomic>
 
-extern "C" int mh_lodlight_freeze_method; // from the patched MinHook
+extern "C" int mh_vlights_freeze_method; // from the patched MinHook
 
 namespace
 {
 	SRWLOCK g_configLock = SRWLOCK_INIT;
-	lodlight::Config g_config;
+	vlights::Config g_config;
 	std::wstring g_configPath;
 
 	std::atomic<uint64_t> g_lastRepaintLights{ 0 };
 	std::atomic<uint64_t> g_lastRepaintRecolored{ 0 };
 
-	void LogConfig(const lodlight::Config& cfg, const char* why)
+	void LogConfig(const vlights::Config& cfg, const char* why)
 	{
-		lodlight::Log("config (%s): enabled=%d source=(%.0f,%.0f,%.0f) hue=%.1f window=%.1f min_sat=%.2f target=(%.0f,%.0f,%.0f) blend=%.2f keep_brightness=%d cream=%d near=%d near_log=%d log_samples=%d log_blocks=%d reload_key=0x%X menu_key=0x%X live_repaint=%d debug=%d",
+		vlights::Log("config (%s): enabled=%d source=(%.0f,%.0f,%.0f) hue=%.1f window=%.1f min_sat=%.2f target=(%.0f,%.0f,%.0f) blend=%.2f keep_brightness=%d cream=%d near=%d near_log=%d log_samples=%d log_blocks=%d reload_key=0x%X menu_key=0x%X live_repaint=%d debug=%d",
 			why, cfg.match.enabled, cfg.source.r, cfg.source.g, cfg.source.b, cfg.match.sourceHue, cfg.match.hueWindow,
 			cfg.match.minSaturation, cfg.match.target.r, cfg.match.target.g, cfg.match.target.b, cfg.match.blend,
 			cfg.match.keepBrightness, cfg.match.zone2, cfg.nearEnabled, cfg.nearLog, cfg.logSamples, cfg.logBlocks, cfg.reloadKey, cfg.menuKey, cfg.liveRepaint, cfg.debug);
 	}
 }
 
-namespace lodlight
+namespace vlights
 {
 	void SetConfigPath(const std::wstring& path)
 	{
@@ -96,6 +97,7 @@ namespace lodlight
 	{
 		const Config cfg = GetConfig();
 		track::Totals t = track::ReapplyAll(cfg);
+		textures::RequestRepaint();
 		g_lastRepaintLights = t.lights;
 		g_lastRepaintRecolored = t.changed;
 		if (cfg.logBlocks || t.stale || t.mismatched)
@@ -128,7 +130,7 @@ namespace lodlight
 
 	const char* LastFreezeMethod()
 	{
-		switch (mh_lodlight_freeze_method)
+		switch (mh_vlights_freeze_method)
 		{
 		case 1: return "Toolhelp";
 		case 2: return "NtGetNextThread";

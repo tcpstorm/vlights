@@ -8,7 +8,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace lodlight
+namespace vlights
 {
 	struct RGB
 	{

@@ -21,7 +21,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace lodlight::track
+namespace vlights::track
 {
 	enum Kind : int
 	{
@@ -30,7 +30,8 @@ namespace lodlight::track
 		Yft = 2,
 		Ydd = 3,
 		Ytyp = 4,
-		KindCount = 5
+		Txd = 5,  // watched for unloads only (textures)
+		KindCount = 6
 	};
 
 	// Restore `originals` into `obj` and recolour per `cfg`. Returns false if
@@ -51,6 +52,15 @@ namespace lodlight::track
 
 	// Restore + recolour everything still loaded. Any thread.
 	Totals ReapplyAll(const Config& cfg);
+
+	// Install the Remove detour for a store without registering objects, so
+	// the remove listener hears its unloads. Main thread only.
+	void WatchStore(Kind k, void* store);
+
+	// Called (main thread, before the game frees the slot) for every Remove
+	// on a hooked store, tracked or not.
+	using RemoveListener = void (*)(void* store, uint32_t idx);
+	void SetRemoveListener(RemoveListener fn);
 
 	uint64_t CountLoaded();
 	// How often the Remove detour fired, and how often it dropped a tracked slot.
