@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-namespace lodlight::lodlights
+namespace vlights::lodlights
 {
 	struct LodStats
 	{

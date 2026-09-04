@@ -332,9 +332,9 @@ static BOOL EnumerateThreads(PFROZEN_THREADS pThreads)
 // process's threads with ntdll!NtGetNextThread, which has been stable since
 // Vista. If that also fails we proceed without suspending anything and the
 // caller has to guarantee the target is not executing concurrently.
-// mh_lodlight_freeze_method records what happened for the plugin's log.
-int mh_lodlight_freeze_method = -1; /* -1 unknown, 0 none, 1 toolhelp, 2 NtGetNextThread */
-int mh_lodlight_allow_suspend = 0; /* 0: never enumerate/suspend threads (default); 1: try Toolhelp then NtGetNextThread */
+// mh_vlights_freeze_method records what happened for the plugin's log.
+int mh_vlights_freeze_method = -1; /* -1 unknown, 0 none, 1 toolhelp, 2 NtGetNextThread */
+int mh_vlights_allow_suspend = 0; /* 0: never enumerate/suspend threads (default); 1: try Toolhelp then NtGetNextThread */
 
 typedef LONG (NTAPI *PFN_NtGetNextThread)(HANDLE ProcessHandle, HANDLE ThreadHandle, ACCESS_MASK DesiredAccess, ULONG HandleAttributes, ULONG Flags, PHANDLE NewThreadHandle);
 
@@ -399,9 +399,9 @@ static MH_STATUS Freeze(PFROZEN_THREADS pThreads, UINT pos, UINT action)
     pThreads->size     = 0;
 
 #ifdef MH_TOLERATE_FREEZE_FAILURE
-    if (!mh_lodlight_allow_suspend)
+    if (!mh_vlights_allow_suspend)
     {
-        mh_lodlight_freeze_method = 0;
+        mh_vlights_freeze_method = 0;
         return MH_OK; /* caller guarantees the target is not executing concurrently */
     }
 #endif
@@ -409,16 +409,16 @@ static MH_STATUS Freeze(PFROZEN_THREADS pThreads, UINT pos, UINT action)
 #ifdef MH_TOLERATE_FREEZE_FAILURE
     if (enumerated)
     {
-        mh_lodlight_freeze_method = 1;
+        mh_vlights_freeze_method = 1;
     }
     else if (EnumerateThreadsNt(pThreads))
     {
-        mh_lodlight_freeze_method = 2;
+        mh_vlights_freeze_method = 2;
         enumerated = TRUE;
     }
     else
     {
-        mh_lodlight_freeze_method = 0;
+        mh_vlights_freeze_method = 0;
         pThreads->pItems = NULL;
         pThreads->size   = 0;
         enumerated = TRUE; /* proceed without suspending */

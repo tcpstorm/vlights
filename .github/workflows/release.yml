@@ -1,0 +1,92 @@
+# Release: every push to main that builds and passes its tests becomes a
+# GitHub Release named after the VERSION file, with
+# VLights.asi and vlights.ini attached.
+#
+# The tag is v<version>. If that tag already exists (main was pushed again
+# without bumping VERSION), the build still runs and the artifact is
+# uploaded to the run, but no new release is made; bump VERSION to publish.
+# The CI workflow refuses pull requests into main that do not bump it.
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build and test (Docker)
+        run: docker build --target export --output type=local,dest=dist .
+
+      - name: Read version
+        id: version
+        run: |
+          v=$(tr -d '[:space:]' < VERSION)
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "VERSION must be MAJOR.MINOR.PATCH, got '$v'"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VLights-${{ steps.version.outputs.version }}
+          path: |
+            dist/VLights.asi
+            dist/vlights.ini
+          if-no-files-found: error
+
+      - name: Release notes
+        if: steps.version.outputs.exists == 'false'
+        id: notes
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          {
+            echo "VLights ${{ steps.version.outputs.version }}"
+            echo
+            echo "Install: drop \`VLights.asi\` into \`FiveM.app\\plugins\\\`. The ini is optional (the plugin writes one on first run)."
+            echo
+            if [ -n "$prev" ]; then
+              echo "Changes since $prev:"
+              echo
+              git log --no-merges --format='- %s' "$prev..HEAD"
+            else
+              echo "First release."
+            fi
+          } > notes.md
+          cat notes.md
+
+      - name: Create release
+        if: steps.version.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: VLights ${{ steps.version.outputs.version }}
+          body_path: notes.md
+          files: |
+            dist/VLights.asi
+            dist/vlights.ini
+          fail_on_unmatched_files: true
+
+      - name: Already released
+        if: steps.version.outputs.exists == 'true'
+        run: echo "tag ${{ steps.version.outputs.tag }} exists; bump VERSION to publish a new release"

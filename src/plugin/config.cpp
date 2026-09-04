@@ -9,7 +9,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace lodlight
+namespace vlights
 {
 	static std::string ColorText(const RGB& c)
 	{
@@ -37,8 +37,8 @@ namespace lodlight
 	std::string RenderIni(const Config& cfg)
 	{
 		std::string s;
-		s += "# LOD Light Recolor - config\n";
-		s += "# Lives next to LodLightRecolor.asi. Press the reload key in-game to\n";
+		s += "# VLights - config\n";
+		s += "# Lives next to VLights.asi. Press the reload key in-game to\n";
 		s += "# re-read it, or use the in-game menu (menu key) and Save.\n";
 		s += "\n";
 		s += "enabled = " + std::string(cfg.match.enabled ? "1" : "0") + "\n";
@@ -77,8 +77,18 @@ namespace lodlight
 		s += "# Takes effect at game start (hooks are installed then). Near lights take\n";
 		s += "# a new colour as they stream in again, not instantly.\n";
 		s += "near_enabled = " + std::string(cfg.nearEnabled ? "1" : "0") + "\n";
+		s += "# textures: also recolour the lantern glow baked into lamp textures (the\n";
+		s += "# emissive lens), with the same match and target. Hook installs at game\n";
+		s += "# start; colour changes repaint these live.\n";
+		s += "textures = " + std::string(cfg.texturesEnabled ? "1" : "0") + "\n";
+		s += "# texture_names: comma-separated name fragments; only textures whose name\n";
+		s += "# contains one are touched (keeps amber car indicators and signs alone).\n";
+		s += "texture_names = ";
+		for (size_t i = 0; i < cfg.textureNames.size(); ++i)
+			s += (i ? ", " : "") + cfg.textureNames[i];
 		s += "\n";
-		s += "# Diagnostics (written to lodlight_recolor.log next to the .asi).\n";
+		s += "\n";
+		s += "# Diagnostics (written to vlights.log next to the .asi).\n";
 		s += "# debug: master switch. With 0 nothing below is logged during play, whatever\n";
 		s += "# the individual keys say. Leave at 0 unless investigating: per-object\n";
 		s += "# logging costs frame time while models stream in.\n";
@@ -265,6 +275,23 @@ namespace lodlight
 			else if (key == "live_repaint")   ok = ParseBool(val, cfg.liveRepaint);
 			else if (key == "near_enabled")   ok = ParseBool(val, cfg.nearEnabled);
 			else if (key == "near_log")       ok = ParseBool(val, cfg.nearLog);
+			else if (key == "textures")       ok = ParseBool(val, cfg.texturesEnabled);
+			else if (key == "texture_names")
+			{
+				cfg.textureNames.clear();
+				std::string t = Lower(val);
+				size_t start = 0;
+				while (start <= t.size())
+				{
+					size_t comma = t.find(',', start);
+					std::string item = Trim(t.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+					if (!item.empty())
+						cfg.textureNames.push_back(item);
+					if (comma == std::string::npos)
+						break;
+					start = comma + 1;
+				}
+			}
 			else if (key == "probe")
 			{
 				std::string t = val;

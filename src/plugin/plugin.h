@@ -4,13 +4,13 @@
 #pragma once
 
 #include "plugin/config.h"
+#include <vlights/version.h>
 
 #include <cstdint>
 #include <string>
 
-#define LODLIGHT_VERSION "0.15.2"
 
-namespace lodlight
+namespace vlights
 {
 	struct Stats
 	{

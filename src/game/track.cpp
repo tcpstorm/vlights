@@ -11,7 +11,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace lodlight::track
+namespace vlights::track
 {
 	namespace
 	{
@@ -51,7 +51,8 @@ namespace lodlight::track
 		uintptr_t g_base = 0;
 		size_t g_size = 0;
 
-		const char* kNames[KindCount] = { "ymap", "ydr", "yft", "ydd", "ytyp" };
+		const char* kNames[KindCount] = { "ymap", "ydr", "yft", "ydd", "ytyp", "txd" };
+		RemoveListener g_removeListener = nullptr;
 
 		const PoolBase* Pool(void* store)
 		{
@@ -107,6 +108,8 @@ namespace lodlight::track
 			ReleaseSRWLockExclusive(&g_lock);
 			if (dropped)
 				g_removeDropped++;
+			if (g_removeListener)
+				g_removeListener(store, id);
 			if (call <= 5 || (dropped && g_removeDropped <= 5))
 				LogDebug("remove: store %p id %u%s (call %llu)", store, id, dropped ? " -> dropped from registry" : "", (unsigned long long)call);
 		}
@@ -126,7 +129,8 @@ namespace lodlight::track
 			case 1: return reinterpret_cast<void*>(&RemoveThunk<1>);
 			case 2: return reinterpret_cast<void*>(&RemoveThunk<2>);
 			case 3: return reinterpret_cast<void*>(&RemoveThunk<3>);
-			default: return reinterpret_cast<void*>(&RemoveThunk<4>);
+			case 4: return reinterpret_cast<void*>(&RemoveThunk<4>);
+			default: return reinterpret_cast<void*>(&RemoveThunk<5>);
 			}
 		}
 
@@ -273,6 +277,22 @@ namespace lodlight::track
 			}
 		}
 		ReleaseSRWLockShared(&g_lock);
+	}
+
+	void WatchStore(Kind k, void* store)
+	{
+		AcquireSRWLockExclusive(&g_lock);
+		StoreState& st = g_stores[k];
+		if (!st.store)
+			st.store = store;
+		if (st.store == store)
+			EnsureRemoveHookLocked(k, store);
+		ReleaseSRWLockExclusive(&g_lock);
+	}
+
+	void SetRemoveListener(RemoveListener fn)
+	{
+		g_removeListener = fn;
 	}
 
 	void RemoveStats(uint64_t& calls, uint64_t& dropped)

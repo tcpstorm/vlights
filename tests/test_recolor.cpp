@@ -23,7 +23,7 @@ static bool Near(float a, float b, float eps = 0.6f)
 
 int main()
 {
-	using namespace lodlight;
+	using namespace vlights;
 
 	// packing: 0xIIRRGGBB, top byte preserved
 	{

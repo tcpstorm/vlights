@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <sstream>
 
-namespace lodlight
+namespace vlights
 {
 	bool ParsePattern(const std::string& text, Pattern& out)
 	{

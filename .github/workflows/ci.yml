@@ -1,0 +1,71 @@
+# CI: build the plugin and run its tests on every pull request and on every
+# push to a branch other than main. The Docker build is the whole pipeline
+# (host-native tests first, then the mingw-w64 cross build), so the runner
+# needs nothing but Docker.
+#
+# To gate merges on this, require the "build" and "version bump" checks in
+# the branch protection rule for main (Settings > Branches > main > Require
+# status checks). "version bump" fails a pull request into main whose VERSION
+# file is not higher than main's, so every merge to main is a release.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test (Docker)
+        run: docker build --target export --output type=local,dest=dist .
+
+      - name: Show what was built
+        run: |
+          ls -la dist
+          echo "VERSION: $(cat VERSION)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VLights-${{ github.sha }}
+          path: |
+            dist/VLights.asi
+            dist/vlights.ini
+          if-no-files-found: error
+
+  version-bump:
+    name: version bump
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare VERSION with main
+        run: |
+          new=$(tr -d '[:space:]' < VERSION)
+          old=$(git show "origin/${{ github.base_ref }}:VERSION" 2>/dev/null | tr -d '[:space:]' || echo 0.0.0)
+          echo "main: $old   this PR: $new"
+          echo "$new" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "VERSION must be MAJOR.MINOR.PATCH"; exit 1; }
+          highest=$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n1)
+          if [ "$new" = "$old" ] || [ "$highest" != "$new" ]; then
+            echo "::error file=VERSION::VERSION ($new) must be higher than main's ($old); bump it so the merge produces a release"
+            exit 1
+          fi
+          if git ls-remote --tags origin "refs/tags/v$new" | grep -q .; then
+            echo "::error file=VERSION::tag v$new already exists; pick a higher version"
+            exit 1
+          fi

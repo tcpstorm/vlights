@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Builds LodLightRecolor.asi inside Docker and drops it in .\dist.
+  Builds VLights.asi inside Docker and drops it in .\dist.
 
 .PARAMETER Install
   Also copy the .asi (and the ini, if none is there yet) into the FiveM
@@ -24,15 +24,17 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "`nBuilt:" -ForegroundColor Green
 Get-ChildItem $dist | Format-Table Name, Length, LastWriteTime -AutoSize
+$vi = (Get-Item (Join-Path $dist 'VLights.asi')).VersionInfo
+Write-Host ("{0} {1} by {2}" -f $vi.ProductName, $vi.FileVersion, $vi.CompanyName)
 
 if ($Install) {
     if (-not (Test-Path $PluginsDir)) {
         New-Item -ItemType Directory -Force $PluginsDir | Out-Null
     }
-    Copy-Item (Join-Path $dist 'LodLightRecolor.asi') $PluginsDir -Force
-    $ini = Join-Path $PluginsDir 'lodlight_recolor.ini'
+    Copy-Item (Join-Path $dist 'VLights.asi') $PluginsDir -Force
+    $ini = Join-Path $PluginsDir 'vlights.ini'
     if (-not (Test-Path $ini)) {
-        Copy-Item (Join-Path $dist 'lodlight_recolor.ini') $ini
+        Copy-Item (Join-Path $dist 'vlights.ini') $ini
     }
     Write-Host "Installed to $PluginsDir" -ForegroundColor Green
 }

@@ -1,0 +1,34 @@
+// version.rc.in - Windows VERSIONINFO for the .asi, filled in by CMake from
+// the VERSION file and the VLIGHTS_AUTHOR / VLIGHTS_URL cache variables. Shows up in the file's Properties > Details
+// tab and in Get-Item ... | % VersionInfo.
+#include <windows.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    @VLIGHTS_VER_MAJOR@,@VLIGHTS_VER_MINOR@,@VLIGHTS_VER_PATCH@,0
+ PRODUCTVERSION @VLIGHTS_VER_MAJOR@,@VLIGHTS_VER_MINOR@,@VLIGHTS_VER_PATCH@,0
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      0
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_DLL
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "@VLIGHTS_AUTHOR@\0"
+            VALUE "FileDescription",  "VLights - recolours GTA V street lights in FiveM\0"
+            VALUE "FileVersion",      "@VLIGHTS_VERSION@\0"
+            VALUE "InternalName",     "VLights\0"
+            VALUE "LegalCopyright",   "Copyright (c) @VLIGHTS_YEAR@ @VLIGHTS_AUTHOR@\0"
+            VALUE "OriginalFilename", "VLights.asi\0"
+            VALUE "ProductName",      "VLights\0"
+            VALUE "ProductVersion",   "@VLIGHTS_VERSION@\0"
+            VALUE "Comments",         "@VLIGHTS_URL@\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
