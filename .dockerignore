@@ -1,6 +1,21 @@
-*.log
-.git/
-build-*/
-build/
-dist-sym/
-dist/
+# Allowlist: the Docker build context contains only what the Dockerfile
+# COPYs. Everything else (docs, media, tools, workflows, personal files,
+# build output, git metadata) stays on the host. Keep this in step with the
+# COPY lines in the Dockerfile.
+*
+!CMakeLists.txt
+!VERSION
+!vlights.ini
+!cmake/
+!src/
+!res/
+!tests/
+!third_party/
+
+# never, even inside the allowed folders
+**/*.log
+**/*.png
+**/*.jpg
+**/*.gif
+**/*.mp4
+**/__pycache__/
