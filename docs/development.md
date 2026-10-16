@@ -69,7 +69,15 @@ from PowerShell in an empty folder and copy the file it writes:
 [System.Runtime.InteropServices.NativeLibrary]::Load("$pwd\VLights.asi")
 ```
 
-(That call is also the quickest way to check whether Smart App Control
+`NativeLibrary` exists in PowerShell 7 only; under Windows PowerShell 5.1
+call `LoadLibraryW` instead:
+
+```powershell
+Add-Type -Name K32 -Namespace W -MemberDefinition '[DllImport("kernel32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr LoadLibraryW(string p);'
+[W.K32]::LoadLibraryW("$pwd\VLights.asi")
+```
+
+(Either call is also the quickest way to check whether Smart App Control
 will let the build load.)
 
 ## Layout
