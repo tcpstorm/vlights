@@ -145,14 +145,25 @@ Dockerfile, build.ps1   the build
 - **Hook paths take the shared config snapshot** (`GetConfigPtr()`), never
   a copy: the config carries string lists, and the placement hook runs
   thousands of times a session. Per-object work is cached where the
-  answer cannot change (extension type per vtable, the lamp hash set per
-  config snapshot). `hook time:` on F9 is the measurement. Reference
-  numbers from a five-minute drive and flight through Los Santos on
-  0.21.1: map blocks 659 calls, 6.7 ms in total, worst 0.4 ms; models
-  2817 calls, 27 ms, worst 0.5 ms (both on the main thread); placement
-  3721 calls, 118 ms, worst 4.3 ms (a large lens texture, on a streaming
-  thread, never the render thread); a live repaint about 11 ms on the
-  worker thread. Nothing runs per frame.
+  answer cannot change (extension type per vtable, the lamp hash set and
+  the texture endpoint tables per config generation). Caches key on
+  `Config::generation`, never on a snapshot's address: a freed snapshot's
+  heap block is reused by the next one. `hook time:` on F9 is the
+  measurement. Reference numbers from a five-minute drive and flight
+  through Los Santos on 0.21.1: map blocks 659 calls, 6.7 ms in total,
+  worst 0.4 ms; models 2817 calls, 27 ms, worst 0.5 ms (both on the main
+  thread); placement 3721 calls, 118 ms, worst 4.3 ms (a large lens
+  texture, on a streaming thread, never the render thread); a live repaint
+  about 11 ms on the worker thread. Nothing runs per frame.
+- **Never hold a registry lock while doing work.** The main thread takes
+  the light registry lock on every load and unload and the texture
+  registry lock on every unload; the streaming thread takes the texture
+  lock on every placement. So repaints are coalesced (`ReapplyAll` only
+  sets a flag; the worker thread services it at most five times a second,
+  so a slider drag is not sixty repaints a second), the texture repaint
+  holds its lock only to read pointers and to swap them (pixel passes and
+  device calls run between, from copies), and GPU objects dropped on the
+  game's threads are queued and released by the worker thread.
 - **A fork of the FiveM client is not the way to ship this.** Its CI clones
   private repos, the anti-cheat component is private (public builds get a
   stub), and the build is Windows-only with a large toolchain.

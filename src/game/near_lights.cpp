@@ -596,17 +596,18 @@ namespace vlights::nearlights
 				g_lampHashVersion++;
 		}
 
-		// Cached: rebuilt only when the config snapshot or the runtime set changed.
+		// Cached: rebuilt only when the config generation or the runtime set
+		// changed (keyed on the generation, not the snapshot's address).
 		SRWLOCK g_lampSetLock = SRWLOCK_INIT;
 		std::shared_ptr<const std::unordered_set<uint32_t>> g_lampSet;
-		const Config* g_lampSetCfg = nullptr;
+		uint64_t g_lampSetGeneration = 0;
 		uint64_t g_lampSetVersion = 0;
 
 		std::shared_ptr<const std::unordered_set<uint32_t>> LampHashSet(const Config& cfg)
 		{
 			const uint64_t ver = g_lampHashVersion.load();
 			AcquireSRWLockShared(&g_lampSetLock);
-			if (g_lampSet && g_lampSetCfg == &cfg && g_lampSetVersion == ver)
+			if (g_lampSet && g_lampSetGeneration == cfg.generation && g_lampSetVersion == ver)
 			{
 				auto p = g_lampSet;
 				ReleaseSRWLockShared(&g_lampSetLock);
@@ -625,7 +626,7 @@ namespace vlights::nearlights
 			}
 			AcquireSRWLockExclusive(&g_lampSetLock);
 			g_lampSet = out;
-			g_lampSetCfg = &cfg;
+			g_lampSetGeneration = cfg.generation;
 			g_lampSetVersion = ver;
 			ReleaseSRWLockExclusive(&g_lampSetLock);
 			return out;

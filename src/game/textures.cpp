@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -298,45 +299,53 @@ namespace vlights::textures
 		// An RGB565 endpoint has 65536 possible values and a texture repeats a
 		// few hundred of them tens of thousands of times, so the colour maths
 		// runs once per distinct value: two lookup tables (matched / forced),
-		// filled lazily, thrown away when the match parameters change. Reads are
-		// lock-free on a filled entry; a miss takes the lock to fill it.
+		// filled lazily, one per config generation. A table is fetched once per
+		// texture and read and filled without any lock: each entry is one
+		// atomic word (bit 16 = known, low 16 bits = the recoloured endpoint),
+		// and two threads filling the same entry write the same value. A
+		// thread still holding an older snapshot keeps its own table alive.
 		struct Lut
 		{
-			const MatchParams* params = nullptr;
-			std::vector<uint16_t> out;   // 65536
-			std::vector<uint8_t> known;  // 65536 flags
+			uint64_t generation = 0;
+			std::unique_ptr<std::atomic<uint32_t>[]> table; // 65536
 		};
+		constexpr uint32_t kLutKnown = 0x10000u;
 		SRWLOCK g_lutLock = SRWLOCK_INIT;
-		Lut g_luts[2];
+		std::shared_ptr<Lut> g_luts[2];
 
-		uint16_t Recolour565Cached(uint16_t c, const MatchParams& m, bool force)
+		std::shared_ptr<Lut> LutFor(uint64_t generation, bool force)
 		{
-			Lut& lut = g_luts[force ? 1 : 0];
+			const int k = force ? 1 : 0;
 			AcquireSRWLockShared(&g_lutLock);
-			if (lut.params == &m && lut.known[c])
-			{
-				const uint16_t r = lut.out[c];
-				ReleaseSRWLockShared(&g_lutLock);
-				return r;
-			}
+			std::shared_ptr<Lut> lut = g_luts[k];
 			ReleaseSRWLockShared(&g_lutLock);
-			const uint16_t r = Recolour565Slow(c, m, force);
+			if (lut && lut->generation == generation)
+				return lut;
+			auto fresh = std::make_shared<Lut>();
+			fresh->generation = generation;
+			fresh->table.reset(new std::atomic<uint32_t>[65536]()); // value-initialised: all unknown
 			AcquireSRWLockExclusive(&g_lutLock);
-			if (lut.params != &m)
-			{
-				lut.params = &m;
-				lut.out.assign(65536, 0);
-				lut.known.assign(65536, 0);
-			}
-			lut.out[c] = r;
-			lut.known[c] = 1;
+			if (g_luts[k] && g_luts[k]->generation == generation)
+				fresh = g_luts[k]; // another thread published the same generation first
+			else
+				g_luts[k] = fresh;
 			ReleaseSRWLockExclusive(&g_lutLock);
+			return fresh;
+		}
+
+		uint16_t Recolour565Cached(uint16_t c, const MatchParams& m, bool force, Lut& lut)
+		{
+			const uint32_t e = lut.table[c].load(std::memory_order_relaxed);
+			if (e & kLutKnown)
+				return static_cast<uint16_t>(e);
+			const uint16_t r = Recolour565Slow(c, m, force);
+			lut.table[c].store(kLutKnown | r, std::memory_order_relaxed);
 			return r;
 		}
 
-		bool Recolour565(uint16_t& c, const MatchParams& m, bool force)
+		bool Recolour565(uint16_t& c, const MatchParams& m, bool force, Lut& lut)
 		{
-			const uint16_t r = Recolour565Cached(c, m, force);
+			const uint16_t r = Recolour565Cached(c, m, force, lut);
 			if (r == c)
 				return false;
 			c = r;
@@ -347,14 +356,14 @@ namespace vlights::textures
 		// its mode from the endpoint order (c0 > c1: four colours; else three +
 		// transparent), so the order is preserved by swapping back and remapping
 		// the indices when a recolour flips it.
-		bool RecolourBlock(uint8_t* blk, const MatchParams& m, bool dxt1, bool force)
+		bool RecolourBlock(uint8_t* blk, const MatchParams& m, bool dxt1, bool force, Lut& lut)
 		{
 			uint16_t c0 = *reinterpret_cast<uint16_t*>(blk);
 			uint16_t c1 = *reinterpret_cast<uint16_t*>(blk + 2);
 			const bool fourColour = c0 > c1;
 			uint16_t n0 = c0, n1 = c1;
-			const bool ch0 = Recolour565(n0, m, force);
-			const bool ch1 = Recolour565(n1, m, force);
+			const bool ch0 = Recolour565(n0, m, force, lut);
+			const bool ch1 = Recolour565(n1, m, force, lut);
 			if (!ch0 && !ch1)
 				return false;
 			if (dxt1)
@@ -391,10 +400,13 @@ namespace vlights::textures
 		}
 
 		// Recolour `levels` mips of pixel data in place. Returns blocks/pixels
-		// changed.
-		long RecolourPixels(uint8_t* px, size_t avail, Fmt kind, unsigned w, unsigned h, unsigned levels, const MatchParams& m, bool force = false)
+		// changed. `generation` selects the endpoint table (Config::generation).
+		long RecolourPixels(uint8_t* px, size_t avail, Fmt kind, unsigned w, unsigned h, unsigned levels, const MatchParams& m, uint64_t generation, bool force = false)
 		{
 			long changed = 0;
+			std::shared_ptr<Lut> lut;
+			if (IsBlock(kind))
+				lut = LutFor(generation, force);
 			size_t off = 0;
 			unsigned lw = w, lh = h;
 			for (unsigned lvl = 0; lvl < levels; ++lvl)
@@ -409,7 +421,7 @@ namespace vlights::textures
 					const size_t bs = BlockBytes(kind);
 					const size_t colourOff = dxt1 ? 0 : 8;
 					for (size_t b = 0; b < bytes / bs; ++b)
-						if (RecolourBlock(px + off + b * bs + colourOff, m, dxt1, force))
+						if (RecolourBlock(px + off + b * bs + colourOff, m, dxt1, force, *lut))
 							changed++;
 				}
 				else
@@ -434,11 +446,21 @@ namespace vlights::textures
 			return changed;
 		}
 
-		// FNV-1a over a pixel buffer: cheap identity for "is this already shown".
+		// FNV-style hash over a pixel buffer, eight bytes a step: cheap identity
+		// for "is this already shown".
 		uint64_t HashBytes(const uint8_t* p, size_t n)
 		{
 			uint64_t h = 1469598103934665603ull;
-			for (size_t i = 0; i < n; ++i)
+			size_t i = 0;
+			for (; i + 8 <= n; i += 8)
+			{
+				uint64_t w;
+				std::memcpy(&w, p + i, 8);
+				h ^= w;
+				h *= 1099511628211ull;
+				h ^= h >> 29;
+			}
+			for (; i < n; ++i)
 			{
 				h ^= p[i];
 				h *= 1099511628211ull;
@@ -450,6 +472,7 @@ namespace vlights::textures
 
 		struct Reg
 		{
+			uint64_t id = 0;                 // unique, so a repaint can find the entry again after dropping the lock
 			void* store = nullptr;
 			uint32_t idx = 0;
 			uint8_t* obj = nullptr;          // grcTexture, final address
@@ -458,11 +481,19 @@ namespace vlights::textures
 			Fmt kind = Fmt::Unknown;
 			unsigned w = 0, h = 0, levels = 0;
 			bool force = false;              // texture_force: every pixel retinted
-			std::vector<uint8_t> original;   // all mips, untouched
+			std::shared_ptr<const std::vector<uint8_t>> original; // all mips, untouched; immutable, shared with in-flight repaints
 			uint64_t placedHash = 0;         // pixels the game's GPU texture was built from
 			uint64_t shownHash = 0;          // pixels currently on screen
 			ID3D11Resource* gameTexture = nullptr; // the game's own, once seen
 			ID3D11ShaderResourceView* gameSrv = nullptr;
+			// The game texture's description, read once (under the lock, while
+			// the object is known live) so rebuilds never touch the game's
+			// objects outside the lock.
+			bool descKnown = false;
+			bool descUnusable = false;
+			D3D11_TEXTURE2D_DESC desc{};
+			bool srvDescKnown = false;
+			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
 			ID3D11Resource* ourTexture = nullptr;  // currently swapped in (null = game's)
 			ID3D11ShaderResourceView* ourSrv = nullptr;
 			// Earlier textures of ours for this object. Kept alive as long as the
@@ -475,15 +506,45 @@ namespace vlights::textures
 
 		SRWLOCK g_regLock = SRWLOCK_INIT;
 		std::vector<Reg> g_regs;
+		uint64_t g_nextRegId = 1;
 		size_t g_originalBytes = 0;
 		std::atomic<bool> g_repaintPending{ false };
 		ULONGLONG g_lastRepaint = 0;
 		int g_liveFailuresLogged = 0;
+		// The game's device, referenced once from the first texture seen. Never
+		// released: the plugin lives as long as the process.
+		ID3D11Device* g_device = nullptr;
+		// GPU objects of ours to release. Dropping an entry happens on the
+		// game's main thread (the Remove detour) and on a streaming thread
+		// (re-placement); neither should pay for driver teardown, so releases
+		// are queued and drained by the worker thread.
+		std::vector<std::pair<ID3D11Resource*, ID3D11ShaderResourceView*>> g_releaseQueue;
 
 		void RetireLocked(Reg& r, ID3D11Resource* t, ID3D11ShaderResourceView* v)
 		{
 			if (t || v)
 				r.retired.emplace_back(t, v);
+		}
+
+		// Caller holds g_regLock.
+		void QueueReleaseLocked(ID3D11Resource* t, ID3D11ShaderResourceView* v)
+		{
+			if (t || v)
+				g_releaseQueue.emplace_back(t, v);
+		}
+
+		// Worker thread: release whatever the other threads queued.
+		void DrainReleases()
+		{
+			std::vector<std::pair<ID3D11Resource*, ID3D11ShaderResourceView*>> q;
+			AcquireSRWLockExclusive(&g_regLock);
+			q.swap(g_releaseQueue);
+			ReleaseSRWLockExclusive(&g_regLock);
+			for (auto& t : q)
+			{
+				if (t.second) t.second->Release();
+				if (t.first) t.first->Release();
+			}
 		}
 
 		// The object the store currently holds in that slot (pool entry +0), or
@@ -505,9 +566,10 @@ namespace vlights::textures
 		}
 
 		// Put the game's pointers back (if the object is still ours to touch),
-		// release everything we created for it, forget the entry. Caller holds
-		// g_regLock. `objectAlive` = the object memory is still the resource we
-		// registered (false after an unload we only noticed late, or a move).
+		// queue everything we created for it for release, forget the entry.
+		// Caller holds g_regLock. `objectAlive` = the object memory is still
+		// the resource we registered (false after an unload we only noticed
+		// late, or a move).
 		void RestoreAndDropLocked(size_t i, bool objectAlive)
 		{
 			Reg& r = g_regs[i];
@@ -518,11 +580,8 @@ namespace vlights::textures
 			}
 			RetireLocked(r, r.ourTexture, r.ourSrv);
 			for (auto& t : r.retired)
-			{
-				if (t.second) t.second->Release();
-				if (t.first) t.first->Release();
-			}
-			g_originalBytes -= r.original.size();
+				QueueReleaseLocked(t.first, t.second);
+			g_originalBytes -= r.original ? r.original->size() : 0;
 			g_regs.erase(g_regs.begin() + static_cast<ptrdiff_t>(i));
 		}
 
@@ -536,113 +595,153 @@ namespace vlights::textures
 			return false;
 		}
 
-		// Build a GPU texture from `pixels` on the device of `like`, with the
-		// same description; false if anything about it is not as expected.
-		bool CreateLike(ID3D11Resource* like, ID3D11ShaderResourceView* likeSrv, const Reg& r, const uint8_t* pixels,
-			ID3D11Resource*& outTex, ID3D11ShaderResourceView*& outSrv, std::string& why)
+		// Caller holds g_regLock; the object is live and holds the game's
+		// texture. Reads the description the rebuilds will use, once.
+		void CaptureDescLocked(Reg& r)
+		{
+			if (r.descKnown || r.descUnusable || !r.gameTexture)
+				return;
+			ID3D11Texture2D* tex2d = nullptr;
+			if (FAILED(r.gameTexture->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex2d))) || !tex2d)
+			{
+				r.descUnusable = true;
+				return;
+			}
+			tex2d->GetDesc(&r.desc);
+			if (!g_device)
+				tex2d->GetDevice(&g_device); // keeps the reference
+			tex2d->Release();
+			if (r.gameSrv)
+			{
+				r.gameSrv->GetDesc(&r.srvDesc);
+				r.srvDescKnown = r.srvDesc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D;
+			}
+			r.descKnown = true;
+		}
+
+		// One texture's repaint, carried between the locked phases.
+		struct Job
+		{
+			uint64_t id = 0;
+			std::string name;
+			Fmt kind = Fmt::Unknown;
+			unsigned w = 0, h = 0, levels = 0;
+			bool force = false;
+			std::shared_ptr<const std::vector<uint8_t>> original;
+			uint64_t shownHash = 0, placedHash = 0;
+			D3D11_TEXTURE2D_DESC desc{};
+			bool srvDescKnown = false;
+			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+			// results
+			uint64_t wanted = 0;
+			bool unchanged = false;
+			bool restore = false;
+			ID3D11Resource* tex = nullptr;
+			ID3D11ShaderResourceView* srv = nullptr;
+			std::string why;
+		};
+
+		// Build a GPU texture from `pixels` with the captured description;
+		// false if anything about it is not as expected. No lock held, and
+		// nothing of the game's is touched: the device is free-threaded.
+		bool CreateFromDesc(const Job& j, const uint8_t* pixels, ID3D11Resource*& outTex, ID3D11ShaderResourceView*& outSrv, std::string& why)
 		{
 			outTex = nullptr;
 			outSrv = nullptr;
-			ID3D11Texture2D* tex2d = nullptr;
-			if (FAILED(like->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex2d))) || !tex2d)
-			{
-				why = "not a 2D texture";
-				return false;
-			}
-			D3D11_TEXTURE2D_DESC desc{};
-			tex2d->GetDesc(&desc);
-			ID3D11Device* dev = nullptr;
-			tex2d->GetDevice(&dev);
-			tex2d->Release();
-			if (!dev)
+			if (!g_device)
 			{
 				why = "no device";
 				return false;
 			}
-			bool ok = false;
-			do
+			const D3D11_TEXTURE2D_DESC& desc = j.desc;
+			if (desc.ArraySize != 1 || desc.SampleDesc.Count != 1 || desc.Width != j.w || desc.Height != j.h)
 			{
-				if (desc.ArraySize != 1 || desc.SampleDesc.Count != 1 || desc.Width != r.w || desc.Height != r.h)
-				{
-					why = "unexpected description";
-					break;
-				}
-				std::string fname;
-				if (Classify(desc.Format, fname) != r.kind)
-				{
-					why = "format differs from the resource's";
-					break;
-				}
-				const unsigned levels = desc.MipLevels ? desc.MipLevels : r.levels;
-				if (levels > r.levels || TotalBytes(r.kind, r.w, r.h, levels) > r.original.size())
-				{
-					why = "fewer mips kept than the GPU texture has";
-					break;
-				}
-				std::vector<D3D11_SUBRESOURCE_DATA> init(levels);
-				size_t off = 0;
-				unsigned lw = r.w, lh = r.h;
-				for (unsigned l = 0; l < levels; ++l)
-				{
-					size_t pitch;
-					const size_t bytes = LevelBytes(r.kind, lw, lh, pitch);
-					init[l].pSysMem = pixels + off;
-					init[l].SysMemPitch = static_cast<UINT>(pitch);
-					init[l].SysMemSlicePitch = static_cast<UINT>(bytes);
-					off += bytes;
-					lw = lw > 1 ? lw / 2 : 1;
-					lh = lh > 1 ? lh / 2 : 1;
-				}
-				D3D11_TEXTURE2D_DESC nd = desc;
-				nd.MipLevels = levels;
-				nd.Usage = D3D11_USAGE_IMMUTABLE;
-				nd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-				nd.CPUAccessFlags = 0;
-				nd.MiscFlags = 0;
-				ID3D11Texture2D* created = nullptr;
-				if (FAILED(dev->CreateTexture2D(&nd, init.data(), &created)) || !created)
-				{
-					why = "CreateTexture2D failed";
-					break;
-				}
-				D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
-				D3D11_SHADER_RESOURCE_VIEW_DESC* psd = nullptr;
-				if (likeSrv)
-				{
-					likeSrv->GetDesc(&sd);
-					if (sd.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D)
-					{
-						sd.Texture2D.MostDetailedMip = 0;
-						sd.Texture2D.MipLevels = levels;
-						psd = &sd;
-					}
-				}
-				ID3D11ShaderResourceView* srv = nullptr;
-				if (FAILED(dev->CreateShaderResourceView(created, psd, &srv)) || !srv)
-				{
-					created->Release();
-					why = "CreateShaderResourceView failed";
-					break;
-				}
-				outTex = created;
-				outSrv = srv;
-				ok = true;
-			} while (false);
-			dev->Release();
-			return ok;
+				why = "unexpected description";
+				return false;
+			}
+			std::string fname;
+			if (Classify(desc.Format, fname) != j.kind)
+			{
+				why = "format differs from the resource's";
+				return false;
+			}
+			const unsigned levels = desc.MipLevels ? desc.MipLevels : j.levels;
+			if (levels > j.levels || TotalBytes(j.kind, j.w, j.h, levels) > j.original->size())
+			{
+				why = "fewer mips kept than the GPU texture has";
+				return false;
+			}
+			std::vector<D3D11_SUBRESOURCE_DATA> init(levels);
+			size_t off = 0;
+			unsigned lw = j.w, lh = j.h;
+			for (unsigned l = 0; l < levels; ++l)
+			{
+				size_t pitch;
+				const size_t bytes = LevelBytes(j.kind, lw, lh, pitch);
+				init[l].pSysMem = pixels + off;
+				init[l].SysMemPitch = static_cast<UINT>(pitch);
+				init[l].SysMemSlicePitch = static_cast<UINT>(bytes);
+				off += bytes;
+				lw = lw > 1 ? lw / 2 : 1;
+				lh = lh > 1 ? lh / 2 : 1;
+			}
+			D3D11_TEXTURE2D_DESC nd = desc;
+			nd.MipLevels = levels;
+			nd.Usage = D3D11_USAGE_IMMUTABLE;
+			nd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+			nd.CPUAccessFlags = 0;
+			nd.MiscFlags = 0;
+			ID3D11Texture2D* created = nullptr;
+			if (FAILED(g_device->CreateTexture2D(&nd, init.data(), &created)) || !created)
+			{
+				why = "CreateTexture2D failed";
+				return false;
+			}
+			D3D11_SHADER_RESOURCE_VIEW_DESC sd = j.srvDesc;
+			D3D11_SHADER_RESOURCE_VIEW_DESC* psd = nullptr;
+			if (j.srvDescKnown)
+			{
+				sd.Texture2D.MostDetailedMip = 0;
+				sd.Texture2D.MipLevels = levels;
+				psd = &sd;
+			}
+			ID3D11ShaderResourceView* srv = nullptr;
+			if (FAILED(g_device->CreateShaderResourceView(created, psd, &srv)) || !srv)
+			{
+				created->Release();
+				why = "CreateShaderResourceView failed";
+				return false;
+			}
+			outTex = created;
+			outSrv = srv;
+			return true;
+		}
+
+		// Caller holds g_regLock.
+		Reg* FindRegLocked(uint64_t id)
+		{
+			for (Reg& r : g_regs)
+				if (r.id == id)
+					return &r;
+			return nullptr;
 		}
 
 		// Rebuild every registered texture with the current config. Worker
-		// thread.
+		// thread. The lock is held only for pointer reads and swaps, never for
+		// the pixel passes or the device calls: the main thread's Remove detour
+		// and the streaming thread's placement wait on the same lock.
 		void RepaintAll()
 		{
 			const ConfigPtr cfgPtr = GetConfigPtr();
 			const Config& cfg = *cfgPtr;
 			const bool paint = cfg.texturesEnabled && cfg.match.enabled;
-			unsigned rebuilt = 0, restored = 0, skipped = 0, failed = 0;
-			std::vector<uint8_t> work;
+			unsigned rebuilt = 0, restored = 0, skipped = 0, failed = 0, dropped = 0, lost = 0;
+
+			// Phase 1 (locked, brief): drop what is no longer loaded, note the
+			// game's pointers, copy what the pixel pass needs.
+			std::vector<Job> jobs;
 			AcquireSRWLockExclusive(&g_regLock);
-			unsigned dropped = 0;
+			jobs.reserve(g_regs.size());
 			for (size_t i = 0; i < g_regs.size();)
 			{
 				Reg& r = g_regs[i];
@@ -674,21 +773,86 @@ namespace vlights::textures
 					skipped++;
 					continue;
 				}
+				CaptureDescLocked(r);
+				if (r.descUnusable)
+				{
+					failed++;
+					continue;
+				}
+				Job j;
+				j.id = r.id;
+				j.name = r.name;
+				j.kind = r.kind;
+				j.w = r.w;
+				j.h = r.h;
+				j.levels = r.levels;
+				j.force = r.force && cfg.allStreetLights;
+				j.original = r.original;
+				j.shownHash = r.shownHash;
+				j.placedHash = r.placedHash;
+				j.desc = r.desc;
+				j.srvDescKnown = r.srvDescKnown;
+				j.srvDesc = r.srvDesc;
+				jobs.push_back(std::move(j));
+			}
+			ReleaseSRWLockExclusive(&g_regLock);
 
-				// What this config wants on screen: the untouched pixels when the
-				// plugin is disabled, otherwise the originals recoloured anew.
-				work = r.original;
+			// Phase 2 (unlocked): what this config wants on screen (the untouched
+			// pixels when the plugin is disabled, otherwise the originals
+			// recoloured anew), and a GPU texture for it when needed.
+			std::vector<uint8_t> work;
+			for (Job& j : jobs)
+			{
+				work = *j.original;
 				if (paint)
-					RecolourPixels(work.data(), work.size(), r.kind, r.w, r.h, r.levels, cfg.match, r.force && cfg.allStreetLights);
-				const uint64_t wanted = HashBytes(work.data(), work.size());
-				if (wanted == r.shownHash)
+					RecolourPixels(work.data(), work.size(), j.kind, j.w, j.h, j.levels, cfg.match, cfg.generation, j.force);
+				j.wanted = HashBytes(work.data(), work.size());
+				if (j.wanted == j.shownHash)
+				{
+					j.unchanged = true;
+					continue;
+				}
+				if (j.wanted == j.placedHash)
+				{
+					j.restore = true; // the game's own GPU texture already holds exactly this
+					continue;
+				}
+				if (!CreateFromDesc(j, work.data(), j.tex, j.srv, j.why))
+				{
+					failed++;
+					if (cfg.debug && g_liveFailuresLogged < 10)
+					{
+						g_liveFailuresLogged++;
+						Log("tex: live rebuild of '%s' failed: %s", j.name.c_str(), j.why.c_str());
+					}
+				}
+			}
+
+			// Phase 3 (locked, brief): swap pointers on entries that are still
+			// the ones we planned for. Anything built for an entry that went
+			// away meanwhile was never published and is simply released.
+			AcquireSRWLockExclusive(&g_regLock);
+			for (Job& j : jobs)
+			{
+				if (j.unchanged)
 				{
 					skipped++;
 					continue;
 				}
-				if (wanted == r.placedHash)
+				if (!j.restore && !j.tex)
+					continue; // failed above
+				Reg* rp = FindRegLocked(j.id);
+				const bool live = rp && SlotObject(rp->store, rp->idx) == rp->root && ProbeReadable(rp->obj, kTexSrv + 8);
+				ID3D11Resource* curTex = live ? *reinterpret_cast<ID3D11Resource**>(rp->obj + kTexResource) : nullptr;
+				if (!live || rp->shownHash != j.shownHash || (curTex != rp->gameTexture && !IsOursLocked(*rp, curTex)))
 				{
-					// The game's own GPU texture already holds exactly this.
+					QueueReleaseLocked(j.tex, j.srv);
+					lost++;
+					continue;
+				}
+				Reg& r = *rp;
+				if (j.restore)
+				{
 					InterlockedExchangePointer(reinterpret_cast<void* volatile*>(r.obj + kTexSrv), r.gameSrv);
 					InterlockedExchangePointer(reinterpret_cast<void* volatile*>(r.obj + kTexResource), r.gameTexture);
 					RetireLocked(r, r.ourTexture, r.ourSrv);
@@ -698,30 +862,18 @@ namespace vlights::textures
 					restored++;
 					continue;
 				}
-				ID3D11Resource* nt = nullptr;
-				ID3D11ShaderResourceView* ns = nullptr;
-				std::string why;
-				if (!CreateLike(r.gameTexture, r.gameSrv, r, work.data(), nt, ns, why))
-				{
-					failed++;
-					if (cfg.debug && g_liveFailuresLogged < 10)
-					{
-						g_liveFailuresLogged++;
-						Log("tex: live rebuild of '%s' failed: %s", r.name.c_str(), why.c_str());
-					}
-					continue;
-				}
-				InterlockedExchangePointer(reinterpret_cast<void* volatile*>(r.obj + kTexSrv), ns);
-				InterlockedExchangePointer(reinterpret_cast<void* volatile*>(r.obj + kTexResource), nt);
+				InterlockedExchangePointer(reinterpret_cast<void* volatile*>(r.obj + kTexSrv), j.srv);
+				InterlockedExchangePointer(reinterpret_cast<void* volatile*>(r.obj + kTexResource), j.tex);
 				RetireLocked(r, r.ourTexture, r.ourSrv);
-				r.ourTexture = nt;
-				r.ourSrv = ns;
-				r.shownHash = wanted;
+				r.ourTexture = j.tex;
+				r.ourSrv = j.srv;
+				r.shownHash = j.wanted;
 				rebuilt++;
 			}
 			ReleaseSRWLockExclusive(&g_regLock);
+			DrainReleases();
 			if (cfg.debug)
-				LogDebug("tex: live repaint: %u textures rebuilt, %u restored, %u unchanged, %u failed, %u dropped", rebuilt, restored, skipped, failed, dropped);
+				LogDebug("tex: live repaint: %u textures rebuilt, %u restored, %u unchanged, %u failed, %u dropped, %u gone meanwhile", rebuilt, restored, skipped, failed, dropped, lost);
 		}
 
 		// ------------------------------------------------------------ walking resources
@@ -898,12 +1050,12 @@ namespace vlights::textures
 
 			// Keep the untouched pixels, recolour in place, remember what the
 			// game's GPU texture will be built from.
-			std::vector<uint8_t> original;
+			std::shared_ptr<std::vector<uint8_t>> original;
 			const bool keep = cfg.liveRepaint && objAvail >= kTexSrv + 8;
 			if (keep)
-				original.assign(px, px + bytes);
+				original = std::make_shared<std::vector<uint8_t>>(px, px + bytes);
 
-			r.changed = RecolourPixels(px, bytes, kind, w, h, levels, cfg.match, force);
+			r.changed = RecolourPixels(px, bytes, kind, w, h, levels, cfg.match, cfg.generation, force);
 			if (r.changed)
 			{
 				g_texturesRecoloured++;
@@ -918,6 +1070,7 @@ namespace vlights::textures
 				if (g_originalBytes + bytes <= kMaxOriginalBytes)
 				{
 					Reg reg;
+					reg.id = g_nextRegId++;
 					reg.store = store;
 					reg.idx = idx;
 					reg.obj = obj;
@@ -1186,6 +1339,7 @@ namespace vlights::textures
 
 	void Tick()
 	{
+		DrainReleases();
 		const ULONGLONG now = GetTickCount64();
 		if (g_repaintPending && now - g_lastRepaint >= 250)
 		{

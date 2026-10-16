@@ -77,6 +77,9 @@ namespace vlights
 
 		SetDebugLogging(cfg.debug);
 
+		static std::atomic<uint64_t> s_generation{ 0 };
+		cfg.generation = ++s_generation;
+
 		std::shared_ptr<const Config> next = std::make_shared<const Config>(cfg);
 		AcquireSRWLockExclusive(&g_configLock);
 		g_config = cfg;
@@ -108,9 +111,29 @@ namespace vlights
 		return ok;
 	}
 
+	// Repaints are coalesced: a slider drag asks sixty times a second, and
+	// each light repaint holds the registry lock the game's main thread needs
+	// for every streaming load and unload. The worker thread services the
+	// request at most a few times a second; the last request always wins.
+	static std::atomic<bool> g_repaintPending{ false };
+	static ULONGLONG g_lastRepaint = 0;
+	constexpr ULONGLONG kRepaintIntervalMs = 200;
+
 	void ReapplyAll()
 	{
-		const Config cfg = GetConfig();
+		g_repaintPending = true;
+	}
+
+	void RepaintTick()
+	{
+		const ULONGLONG now = GetTickCount64();
+		if (!g_repaintPending.load() || now - g_lastRepaint < kRepaintIntervalMs)
+			return;
+		g_repaintPending = false;
+		g_lastRepaint = now;
+
+		const ConfigPtr cfgPtr = GetConfigPtr(); // the shared snapshot: caches key on its generation
+		const Config& cfg = *cfgPtr;
 		timing::Scope timed(timing::Repaint);
 		track::Totals t = track::ReapplyAll(cfg);
 		textures::RequestRepaint();

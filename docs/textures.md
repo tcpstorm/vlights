@@ -100,31 +100,44 @@ Every selected texture is registered at placement with a copy of its
 original pixels (all mips, capped at 96 MB total) and the final address of
 its texture object. On a colour change, from the worker thread:
 
-1. Recolour the original copy with the current settings.
-2. Get the current `ID3D11Resource*` from the object, `QueryInterface` to
-   `ID3D11Texture2D`, `GetDesc`, `GetDevice`. Device methods are
-   free-threaded, so no immediate context and no render hook.
-3. `CreateTexture2D` (immutable, shader-resource, initial data per mip
-   with `SysMemPitch` = row pitch) and `CreateShaderResourceView` with the
-   old view's description.
-4. Swap the view pointer at +0x78 and the resource at +0x38 with
-   interlocked exchanges. The renderer picks them up next draw.
-5. Keep the previous pair alive. Everything we created for a texture is
+1. Under the registry lock, briefly: check the store's pool still holds
+   the registered resource, read the current `ID3D11Resource*` from the
+   object, and the first time `QueryInterface` it to `ID3D11Texture2D`,
+   `GetDesc`, `GetDevice` and keep the description (and the view's). Copy
+   what the pixel pass needs into a job list and release the lock.
+2. Without the lock: recolour the original copy with the current settings
+   and, where the result differs from what is shown, `CreateTexture2D`
+   (immutable, shader-resource, initial data per mip with `SysMemPitch` =
+   row pitch) and `CreateShaderResourceView` from the kept descriptions.
+   Device methods are free-threaded, so no immediate context and no
+   render hook; nothing of the game's is touched here.
+3. Under the lock again, briefly: find each entry again (by id), confirm
+   it is still loaded and still holds the game's texture or one of ours,
+   then swap the view pointer at +0x78 and the resource at +0x38 with
+   interlocked exchanges. The renderer picks them up next draw. An entry
+   that went away in between gets its new texture released unused.
+4. Keep the previous pair alive. Everything we created for a texture is
    released only when that texture unloads: the game's hi-detail swap
    (`+hi` dictionaries) moves resource pointers between texture objects
    and restores them later, so a pointer we released early can resurface
    in the game's hands (a game-side crash in the streaming code, 0.19.1).
    An unfamiliar pointer in the object means the game is mid-swap; the
-   entry is skipped that round. Before every repaint the store's pool is
-   checked to confirm the resource is still the one registered.
+   entry is skipped that round.
+
+The lock is never held across a pixel pass or a device call: the game's
+main thread takes it on every unload (the `Remove` detour) and a streaming
+thread on every placement, so a long hold there is a hitch. Releases of
+GPU objects dropped on those threads are queued and performed by the
+worker thread.
 
 The plugin remembers a hash of the pixels the game's own GPU texture was
 built from and of what is on screen. With the plugin disabled (or a
 config that matches nothing) the wanted pixels are the untouched
 originals: if the game's texture already holds them its pointers go back,
 otherwise a texture is built from the original copy, since the game's one
-was made from recoloured data at load. Rebuild requests are coalesced to at most four per
-second so slider drags do not create textures every frame. On unload
+was made from recoloured data at load. Rebuild requests are coalesced to
+at most four per second so slider drags do not create textures every
+frame (light repaints are coalesced the same way, in `RepaintTick`). On unload
 (`Remove` detour, shared with the light registry through
 `track::SetRemoveListener`) the game's pointers are restored before it
 frees the object and the entry is dropped. Confirmed: 42 textures rebuilt
