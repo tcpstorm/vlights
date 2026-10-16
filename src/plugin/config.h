@@ -41,6 +41,9 @@ namespace vlights
 		float probeRadius = 25.f;
 		bool texturesEnabled = true;      // recolour lamp glow textures at load
 		bool updateCheck = true;          // one GET of the latest GitHub release at startup; notice in the menu
+		bool ambientEnabled = true;       // tint the timecycle's exterior artificial ambient (the baked road glow) to the target
+		bool ambientInterior = false;     // the interior artificial ambient too (tunnels, car parks)
+		float ambientBrightness = 1.f;    // scale on the ambient colour; the timecycle's own intensity still applies
 		std::vector<std::string> textureNames{ "streetlight", "wall_light", "lamppost", "lamp_post", "ind_light", "oldlight" }; // lowercase substrings selecting textures
 	};
 

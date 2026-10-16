@@ -20,6 +20,7 @@
 // window, the device, the ImGui context and the message loop. MenuToggle()
 // just posts a message to it.
 #include "color/recolor.h"
+#include "game/ambient.h"
 #include "plugin/log.h"
 #include "plugin/plugin.h"
 #include "plugin/update.h"
@@ -341,6 +342,15 @@ namespace
 			{
 				ImGui::SameLine();
 				ImGui::TextDisabled("(needs a game restart)");
+			}
+			changed |= ImGui::Checkbox("Also tint the baked road glow (timecycle artificial ambient)", &cfg.ambientEnabled);
+			if (cfg.ambientEnabled)
+			{
+				ImGui::Indent();
+				changed |= ImGui::Checkbox("Interiors too (tunnels, car parks)", &cfg.ambientInterior);
+				changed |= ImGui::SliderFloat("Road glow brightness", &cfg.ambientBrightness, 0.f, 2.f, "%.2f");
+				ImGui::TextDisabled("%s", vlights::ambient::Status().c_str());
+				ImGui::Unindent();
 			}
 
 			ImGui::SeparatorText("What counts as sodium orange");

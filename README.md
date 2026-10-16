@@ -3,8 +3,9 @@
 A FiveM plugin that turns the orange sodium street lights of Los Santos
 into any colour you like. Cool white, warm LED, or whatever you set. It
 works on everything you can see: the distant glow across the city, the
-lamps along the road, the light they cast on the ground, and the glowing
-lantern heads themselves.
+lamps along the road, the light they cast on the ground, the glowing
+lantern heads themselves, and the orange wash the night sky paints on
+the roads around lamp posts.
 
 Client-side only and purely cosmetic. It changes colours in your own game
 as the world streams in and touches nothing else. Story mode and servers
@@ -60,8 +61,8 @@ Releases page. That's the only network access the plugin has: one request
 to GitHub at startup, off with `update_check = 0`, and it never installs
 anything on its own.
 
-**What updates instantly and what doesn't.** Far-away lights and the
-lantern glow change the moment you touch a setting. The lights that lamps
+**What updates instantly and what doesn't.** Far-away lights, the
+lantern glow and the road glow change the moment you touch a setting. The lights that lamps
 near you cast on the ground change as those lamps stream back in: move a
 few blocks away and return, or reload. That is how the game holds them;
 see the docs if you want the why.
@@ -83,6 +84,7 @@ is commented; the essentials:
 | `all_streetlights` | `1` | Every light on a street-lamp model takes the target colour, whatever it was: white, teal, pale blue variants included. `0` = only sodium, cream and teal colours. |
 | `near_enabled` | `1` | Also recolour the lamps near you (needs a restart to change). |
 | `textures` | `1` | Also recolour the glowing lantern heads. |
+| `ambient` | `1` | Also tint the baked road glow (the timecycle's artificial ambient) to the target. `ambient_interior = 1` does interiors too; `ambient_brightness` scales it. |
 | `texture_names` | `streetlight, wall_light, ...` | Which textures count as lamps, by name. |
 | `texture_force` | `prop_streetlight_01_bulb` | Lens textures retinted entirely, for variants whose tint is too faint to match. |
 | `reload_key`, `menu_key` | `F9`, `F10` | Hotkeys. `0` disables one. |

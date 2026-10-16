@@ -117,3 +117,5 @@ for the jump so a concurrent reader never sees a half-written patch.
 - GPU textures are immutable and created at placement: texture changes
   need a rebuild + pointer swap (textures.md).
 - LOD light arrays are read in place: they repaint live (lod-lights.md).
+- Timecycle modifiers are read in place every frame: the road glow
+  follows a colour change on the next frame (ambient.md).

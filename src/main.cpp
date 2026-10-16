@@ -13,6 +13,7 @@
 // i.e. from the main thread that is their only caller. That is why MinHook
 // never needs to suspend threads here (see third_party/minhook/src/hook.c;
 // FiveM stubs out the Toolhelp snapshot anyway).
+#include "game/ambient.h"
 #include "game/lod_lights.h"
 #include "game/near_lights.h"
 #include "game/textures.h"
@@ -62,6 +63,7 @@ namespace
 		{
 			Sleep(100);
 			vlights::textures::Tick();
+			vlights::ambient::Tick();
 			const vlights::Config cfg = vlights::GetConfig();
 
 			if (cfg.reloadKey > 0)
@@ -91,6 +93,7 @@ namespace
 						vlights::Log("hook time:%s", t.c_str());
 					}
 					vlights::Log("unmatched warm light colours so far:%s", vlights::nearlights::UnmatchedWarmSummary().c_str());
+					vlights::Log("ambient: %s", vlights::ambient::Status().c_str());
 					vlights::Log("textures: %llu resources placed, %llu with selected textures, %llu textures recoloured (%llu blocks); %llu registered for live repaint", (unsigned long long)vlights::textures::Placements(), (unsigned long long)vlights::textures::Dictionaries(), (unsigned long long)vlights::textures::TexturesRecoloured(), (unsigned long long)vlights::textures::BlocksRecoloured(), (unsigned long long)vlights::textures::Registered());
 					if (vlights::ReloadConfigFromDisk("hotkey"))
 						vlights::ReapplyAll();

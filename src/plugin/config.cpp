@@ -128,6 +128,21 @@ namespace vlights
 			s += (i ? ", " : "") + cfg.textureForce[i];
 		s += "\n";
 		s += "\n";
+		s += "# ambient: also tint the baked road glow. Roads and facades around lamp\n";
+		s += "# posts carry a painted 'artificial ambient' weight that the timecycle\n";
+		s += "# lights sodium orange at night (light_artificial_ext_*_col); it is what\n";
+		s += "# stays orange at a distance once every light is recoloured. The plugin\n";
+		s += "# registers a timecycle modifier in the game's extra script slot with the\n";
+		s += "# target's hue; it follows colour changes instantly and backs off while a\n";
+		s += "# server script holds that slot.\n";
+		s += "ambient = " + std::string(cfg.ambientEnabled ? "1" : "0") + "\n";
+		s += "# ambient_interior: the interior artificial ambient too (tunnels, car\n";
+		s += "# parks, shop interiors), which is lit by other kinds of lamp in vanilla.\n";
+		s += "ambient_interior = " + std::string(cfg.ambientInterior ? "1" : "0") + "\n";
+		s += "# ambient_brightness: scale on the ambient colour (1 = the target at full\n";
+		s += "# value; the timecycle's own day/night intensity still applies).\n";
+		s += "ambient_brightness = " + FloatText(cfg.ambientBrightness) + "\n";
+		s += "\n";
 		s += "# Diagnostics (written to vlights.log next to the .asi).\n";
 		s += "# debug: master switch. With 0 nothing below is logged during play, whatever\n";
 		s += "# the individual keys say. Leave at 0 unless investigating: per-object\n";
@@ -348,6 +363,9 @@ namespace vlights
 			else if (key == "near_log")       ok = ParseBool(val, cfg.nearLog);
 			else if (key == "textures")       ok = ParseBool(val, cfg.texturesEnabled);
 			else if (key == "update_check")   ok = ParseBool(val, cfg.updateCheck);
+			else if (key == "ambient")        ok = ParseBool(val, cfg.ambientEnabled);
+			else if (key == "ambient_interior") ok = ParseBool(val, cfg.ambientInterior);
+			else if (key == "ambient_brightness") ok = ParseFloat(val, cfg.ambientBrightness);
 			else if (key == "texture_names")
 			{
 				cfg.textureNames.clear();
@@ -397,6 +415,7 @@ namespace vlights
 		cfg.match.minSaturation = std::clamp(cfg.match.minSaturation, 0.f, 1.f);
 		cfg.match.blend = std::clamp(cfg.match.blend, 0.f, 1.f);
 		cfg.logSamples = std::max(cfg.logSamples, 0);
+		cfg.ambientBrightness = std::clamp(cfg.ambientBrightness, 0.f, 4.f);
 
 		out = cfg;
 		return true;
