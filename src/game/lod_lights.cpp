@@ -221,8 +221,12 @@ namespace vlights::lodlights
 			}
 
 			// The timecycle manager is up too: register the road-glow modifier
-			// (ambient.h) from the thread that reads it.
-			ambient::OnMapHook();
+			// (ambient.h) from the thread that reads it. Counted with the map
+			// blocks on the F9 hook-time line.
+			{
+				timing::Scope timed(timing::MapBlock);
+				ambient::OnMapHook();
+			}
 
 			if (data && *data)
 				Process(store, idx, *data);

@@ -42,7 +42,8 @@ config (hotkey): ...
 - `hook time:` is the cost on the game's threads: per hook, calls, total
   milliseconds, average and worst microseconds. Map blocks and models run
   on the main thread as things stream in; placement on a streaming thread;
-  repaint on the worker thread. A session's total in the tens of
+  repaint on the worker thread. The road-glow registration (one call,
+  about half a millisecond) is counted under map blocks. A session's total in the tens of
   milliseconds is the expected order; a worst case in the milliseconds
   points at something to look at.
 
