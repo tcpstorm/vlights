@@ -22,6 +22,7 @@ warnings, the `update check:` outcome, and anything that failed.
 stats: calls=... blocks_with_lights=... lights=... recolored=... near_models=... near_lights=... near_recolored=... loaded_now=...
 unload detour: fired N times, dropped M tracked slots
 unmatched warm light colours so far: (r,g,b hH sS)xN ...
+ambient: road glow tint: modifier #N, 6 vars, colour (r, g, b), active; slot reclaimed K times
 textures: P resources placed, D with selected textures, T textures recoloured (B blocks); R registered for live repaint
 config (hotkey): ...
 ```
@@ -34,10 +35,15 @@ config (hotkey): ...
   not, the light comes from a source the plugin does not read.
 - `textures: ... 0 with selected textures` after driving past lamps means
   the placement hook did not install; look for the `tex:` lines at start.
+- `ambient:` says whether the road-glow modifier is in the game's primary
+  timecycle slot (`active`), cleared (`off`), or displaced by a server
+  script (`paused`); `unavailable: ...` names the failed check
+  (ambient.md).
 - `hook time:` is the cost on the game's threads: per hook, calls, total
   milliseconds, average and worst microseconds. Map blocks and models run
   on the main thread as things stream in; placement on a streaming thread;
-  repaint on the worker thread. A session's total in the tens of
+  repaint on the worker thread. The road-glow registration (one call,
+  about half a millisecond) is counted under map blocks. A session's total in the tens of
   milliseconds is the expected order; a worst case in the milliseconds
   points at something to look at.
 
@@ -53,6 +59,10 @@ near: 'ydr' store ...: load-complete vtable[13] at ... detoured
 ymap store ...: Remove (vtable slot 9) at ... detoured; pool count=... entrySize=40
 tex: txd store ...: PlaceResource vtable[12] -> ... (FiveM_b3751_GTAProcess.exe+0x...) detoured
 tex: ydr store ...: PlaceResource shares txd's routine ... (already detoured)
+ambient: timecycle statics: numVars at ..., varInfos at ..., tcManager at ... (base+0x...), script data at ...; allocator tls offset 0x... (ok)
+ambient: 4xx timecycle variables; ext colour vars at A..B / C..D, int found; N modifiers loaded (...); script slots: primary=-1 ... extra=-1
+ambient: loaded modifier #K (hash ..., V vars) sets var X to (0.875, 1.000)
+ambient: modifier 'vlights_ambient' (hash ...) registered as #N with 6 vars (game memory); ext colour (0.922, 0.941, 1.000)
 ```
 
 A `memory checks` line choosing "vtable checks only" means both syscalls

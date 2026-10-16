@@ -197,4 +197,20 @@ namespace vlights
 		packed = out;
 		return true;
 	}
+
+	// --- timecycle artificial ambient ------------------------------------------
+	//
+	// The baked road glow is lit by the timecycle's light_artificial_ext_*_col
+	// colour (0..1 per channel; the *_intensity keyframes carry day/night and
+	// weather). The modifier value is the target's hue and saturation at full
+	// value, scaled by `brightness`, so a white target gives (1,1,1) and the
+	// vanilla intensity still applies.
+	inline void AmbientColour(const RGB& target, float brightness, float out[3])
+	{
+		const float mx = std::max({ target.r, target.g, target.b });
+		const float k = (mx > 0.f) ? std::clamp(brightness, 0.f, 4.f) / mx : 0.f;
+		out[0] = target.r * k;
+		out[1] = target.g * k;
+		out[2] = target.b * k;
+	}
 }

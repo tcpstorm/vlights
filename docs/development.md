@@ -69,7 +69,15 @@ from PowerShell in an empty folder and copy the file it writes:
 [System.Runtime.InteropServices.NativeLibrary]::Load("$pwd\VLights.asi")
 ```
 
-(That call is also the quickest way to check whether Smart App Control
+`NativeLibrary` exists in PowerShell 7 only; under Windows PowerShell 5.1
+call `LoadLibraryW` instead:
+
+```powershell
+Add-Type -Name K32 -Namespace W -MemberDefinition '[DllImport("kernel32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr LoadLibraryW(string p);'
+[W.K32]::LoadLibraryW("$pwd\VLights.asi")
+```
+
+(Either call is also the quickest way to check whether Smart App Control
 will let the build load.)
 
 ## Layout
@@ -90,6 +98,8 @@ src/game/near_lights.*  model lights (store load-complete detour), archetype
                         extensions, store discovery, entity-light helpers
 src/game/textures.*     lantern glow: placement detour, raw resource walk,
                         pixel pass, live GPU rebuild
+src/game/ambient.*      baked road glow: timecycle modifier in the primary
+                        script slot (data only, no detour)
 src/game/track.*        live-repaint registry: per-store Remove detours + pool liveness
 src/ui/menu.cpp         the menu: own top-level window + D3D11 + ImGui, camera lock
 res/VLights.rc          FX_ASI_BUILD resources (one per supported game build)
@@ -106,6 +116,11 @@ Dockerfile, build.ps1   the build
 
 ## Design rules
 
+- **The timecycle is data, not a detour.** The road glow is a modifier
+  the game applies itself; the list is only changed on the main thread
+  inside the map hook, afterwards only aligned 4-byte stores (colour
+  values, the slot index) from other threads. Everything the game may
+  hold a pointer to comes from the game's allocator (ambient.md).
 - **Every game detour is a `.text` code detour** on a function whose only
   caller is one thread, installed from that thread or while it is
   provably not running: the map hook and the archetype hook from `DllMain`
@@ -158,6 +173,10 @@ Dockerfile, build.ps1   the build
 | Model and light-attribute layouts (drawable, fragment, dictionary, 168-byte `CLightAttr`, 160-byte `CLightAttrDef`, 128-byte `fwEntityDef`) | CodeWalker's resource parsers, then confirmed in-game: names read back through the name pointers, `prop_streetlight_01` decodes to its known sodium spot light, probe entities land on the user's coordinates. |
 | `CExtensionDefLightEffect` type hash `0x27922C43` | joaat of the name (CodeWalker's MetaNames), confirmed by the extensions found on real lamp entities |
 | Raw resource block map and pointer encoding | Read off a live `PlaceResource` call (docs/textures.md) and consistent with Cfx `rage-formats-x/include/pgBase.h` |
+| `rage::tcManager` (+0x40 modifiers, +0x50 name map), `tcModifier` (40 bytes), `tcModData` (12), `tcVarInfo` (32), script data (+44 extra slot) and their byte patterns | Cfx `code/components/gta-game-five/include/Timecycle.h` and `src/Timecycle.cpp` (the `static_assert`s and `hook::get_pattern` lines FiveM's timecycle natives use) |
+| `rage::sysMemAllocator` at exe-TLS + offset, `XBR_VIRTUAL_BASE_2802(2)` so `Allocate`/`Free` are slots 8/10 on b3751 | Cfx `rage-allocator-five/include/sysAllocator.h`, `src/sysAllocator.cpp`, `shared/Hooking.h` (`get_tls`) |
+| Modifier entries for `*_col_*` variables carry `1.000` as the second value, `*_intensity` ones `0.000` | Every `timecycle_mods_*.xml` in the game and in community packs; the plugin copies the convention and reports the loaded modifiers' pairs at startup |
+| The orange wash on roads at night is the timecycle's `light_artificial_ext_{down,up}_col`, painted per vertex | Community white-light packs change exactly those keyframes (gta5-mods "Distant LOD Light Editor" notes); confirmed in-game with the modifier |
 | `numStreetLights` cannot be used as a loop bound | CodeWalker's LOD-light generator hardcodes `isStreetLight = false; //TODO: fix this!`, so custom packs ship with `numStreetLights = 0`. The plugin walks the whole array and matches by colour. |
 
 `static_assert`s in `src/game/structs.h` pin the ymap offsets, so a layout

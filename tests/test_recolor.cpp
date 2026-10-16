@@ -159,5 +159,20 @@ int main()
 		CHECK(!ForceRecolor(w, p));
 	}
 
+	// timecycle artificial ambient: hue/saturation of the target at full value
+	{
+		float c[3];
+		AmbientColour(RGB{ 235.f, 240.f, 255.f }, 1.f, c);
+		CHECK(Near(c[0], 235.f / 255.f, 0.001f) && Near(c[1], 240.f / 255.f, 0.001f) && Near(c[2], 1.f, 0.001f));
+		AmbientColour(RGB{ 255.f, 255.f, 255.f }, 0.5f, c);
+		CHECK(Near(c[0], 0.5f, 0.001f) && Near(c[1], 0.5f, 0.001f) && Near(c[2], 0.5f, 0.001f));
+		AmbientColour(RGB{ 0.f, 255.f, 0.f }, 1.f, c); // a dim target still reaches full value
+		CHECK(c[0] == 0.f && Near(c[1], 1.f, 0.001f) && c[2] == 0.f);
+		AmbientColour(RGB{ 0.f, 0.f, 0.f }, 1.f, c);  // black target: no division by zero
+		CHECK(c[0] == 0.f && c[1] == 0.f && c[2] == 0.f);
+		AmbientColour(RGB{ 255.f, 255.f, 255.f }, 9.f, c); // brightness clamped to 4
+		CHECK(Near(c[0], 4.f, 0.001f));
+	}
+
 	return g_failures == 0 ? 0 : 1;
 }

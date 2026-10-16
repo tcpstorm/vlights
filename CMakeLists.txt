@@ -65,6 +65,7 @@ add_library(VLights SHARED
         src/plugin/update.cpp
         src/plugin/log.cpp
         src/hook/pattern.cpp
+        src/game/ambient.cpp
         src/game/lod_lights.cpp
         src/game/near_lights.cpp
         src/game/textures.cpp

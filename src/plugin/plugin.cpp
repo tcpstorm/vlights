@@ -3,6 +3,7 @@
 #include "plugin/plugin.h"
 #include "plugin/timing.h"
 #include "color/recolor.h"
+#include "game/ambient.h"
 #include "game/lod_lights.h"
 #include "game/near_lights.h"
 #include "game/textures.h"
@@ -28,10 +29,11 @@ namespace
 
 	void LogConfig(const vlights::Config& cfg, const char* why)
 	{
-		vlights::Log("config (%s): enabled=%d source=(%.0f,%.0f,%.0f) hue=%.1f window=%.1f min_sat=%.2f target=(%.0f,%.0f,%.0f) blend=%.2f keep_brightness=%d cream=%d near=%d near_log=%d log_samples=%d log_blocks=%d reload_key=0x%X menu_key=0x%X live_repaint=%d debug=%d",
+		vlights::Log("config (%s): enabled=%d source=(%.0f,%.0f,%.0f) hue=%.1f window=%.1f min_sat=%.2f target=(%.0f,%.0f,%.0f) blend=%.2f keep_brightness=%d cream=%d near=%d ambient=%d ambient_interior=%d ambient_brightness=%.2f near_log=%d log_samples=%d log_blocks=%d reload_key=0x%X menu_key=0x%X live_repaint=%d debug=%d",
 			why, cfg.match.enabled, cfg.source.r, cfg.source.g, cfg.source.b, cfg.match.sourceHue, cfg.match.hueWindow,
 			cfg.match.minSaturation, cfg.match.target.r, cfg.match.target.g, cfg.match.target.b, cfg.match.blend,
-			cfg.match.keepBrightness, cfg.match.zone2, cfg.nearEnabled, cfg.nearLog, cfg.logSamples, cfg.logBlocks, cfg.reloadKey, cfg.menuKey, cfg.liveRepaint, cfg.debug);
+			cfg.match.keepBrightness, cfg.match.zone2, cfg.nearEnabled, cfg.ambientEnabled, cfg.ambientInterior, cfg.ambientBrightness,
+			cfg.nearLog, cfg.logSamples, cfg.logBlocks, cfg.reloadKey, cfg.menuKey, cfg.liveRepaint, cfg.debug);
 	}
 }
 
@@ -71,6 +73,7 @@ namespace vlights
 		cfg.match.hueWindow = std::clamp(cfg.match.hueWindow, 0.f, 180.f);
 		cfg.match.minSaturation = std::clamp(cfg.match.minSaturation, 0.f, 1.f);
 		cfg.match.blend = std::clamp(cfg.match.blend, 0.f, 1.f);
+		cfg.ambientBrightness = std::clamp(cfg.ambientBrightness, 0.f, 4.f);
 
 		SetDebugLogging(cfg.debug);
 
@@ -111,6 +114,7 @@ namespace vlights
 		timing::Scope timed(timing::Repaint);
 		track::Totals t = track::ReapplyAll(cfg);
 		textures::RequestRepaint();
+		ambient::Apply(cfg);
 		g_lastRepaintLights = t.lights;
 		g_lastRepaintRecolored = t.changed;
 		if (cfg.logBlocks || t.stale || t.mismatched)

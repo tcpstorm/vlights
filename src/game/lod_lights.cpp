@@ -5,6 +5,7 @@
 // after. We never rely on that fix-up.
 #include "game/lod_lights.h"
 #include "color/recolor.h"
+#include "game/ambient.h"
 #include "game/near_lights.h"
 #include "game/structs.h"
 #include "game/track.h"
@@ -219,6 +220,14 @@ namespace vlights::lodlights
 				}
 			}
 
+			// The timecycle manager is up too: register the road-glow modifier
+			// (ambient.h) from the thread that reads it. Counted with the map
+			// blocks on the F9 hook-time line.
+			{
+				timing::Scope timed(timing::MapBlock);
+				ambient::OnMapHook();
+			}
+
 			if (data && *data)
 				Process(store, idx, *data);
 
@@ -291,6 +300,7 @@ namespace vlights::lodlights
 
 		if (GetConfig().nearEnabled)
 			nearlights::InstallTypesHook(g_imageBase, g_imageSize, target);
+		ambient::Install(g_imageBase, g_imageSize);
 		return true;
 	}
 
