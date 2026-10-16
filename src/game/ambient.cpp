@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace vlights::ambient
 {
@@ -339,8 +340,27 @@ namespace vlights::ambient
 
 			// The allocator is optional: without it the modifier lives in
 			// plugin memory and the list must have spare capacity.
+			// The pattern is the instruction sequence the game uses to read the
+			// allocator, which the build inlines more than once (two hits on
+			// b3751); every hit carries the same immediate, so they must agree.
 			g_allocOk = false;
-			if (FindOne(kTlsPattern, tls))
+			bool tlsFound = false;
+			{
+				Pattern p;
+				std::vector<uintptr_t> hits;
+				if (ParsePattern(kTlsPattern, p))
+					hits = FindPattern(p, g_base, g_size, 8);
+				if (!hits.empty())
+				{
+					const uint32_t first = *reinterpret_cast<const uint32_t*>(hits[0] + 1);
+					tlsFound = std::all_of(hits.begin(), hits.end(), [&](uintptr_t h) { return *reinterpret_cast<const uint32_t*>(h + 1) == first; });
+					if (tlsFound)
+						tls = hits[0];
+				}
+				if (!tlsFound)
+					Log("ambient: allocator tls pattern '%s' matched %u times with differing offsets; check Cfx sysAllocator.cpp", kTlsPattern, (unsigned)hits.size());
+			}
+			if (tlsFound)
 			{
 				g_tlsOffset = *reinterpret_cast<const uint32_t*>(tls + 1);
 				auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(g_base);
