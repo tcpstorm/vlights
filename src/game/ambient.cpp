@@ -166,6 +166,9 @@ namespace vlights::ambient
 		bool g_slotTakenLogged = false;
 		int g_validateTries = 0;
 		uint64_t g_reclaims = 0;
+		uint64_t g_reclaimWindowStart = 0; // GetTickCount64 of the current 10 s window
+		unsigned g_reclaimsInWindow = 0;
+		bool g_gaveUp = false;             // the game keeps clearing the slot: stop fighting it
 		float g_lastExt[3] = { 0.f, 0.f, 0.f };
 
 		// Static fallback when the game allocator cannot be reached: memory
@@ -448,6 +451,26 @@ namespace vlights::ambient
 			{
 				const uint32_t* after = reinterpret_cast<const uint32_t*>(s) + 12;
 				Log("ambient: script data words after extra: %08X %08X %08X %08X", after[0], after[1], after[2], after[3]);
+				// The manager's header, for finding the weather cycle data one day:
+				// each qword, and for pointer-looking ones the first floats behind it.
+				std::string t;
+				const uint64_t* q = reinterpret_cast<const uint64_t*>(m);
+				for (int i = 0; i < 32; ++i)
+				{
+					char b[160];
+					const void* ptr = reinterpret_cast<const void*>(q[i]);
+					if (q[i] > 0x10000 && q[i] < 0x7FFFFFFFFFFF && ProbeReadable(ptr, 16))
+					{
+						const float* f = static_cast<const float*>(ptr);
+						snprintf(b, sizeof(b), " +%02X=%016llX->(%.3g,%.3g,%.3g,%.3g)", i * 8, (unsigned long long)q[i], f[0], f[1], f[2], f[3]);
+					}
+					else
+					{
+						snprintf(b, sizeof(b), " +%02X=%016llX", i * 8, (unsigned long long)q[i]);
+					}
+					t += b;
+				}
+				Log("ambient: tcManager header:%s", t.c_str());
 			}
 
 			// What loaded modifiers do with these variables: confirms the
@@ -500,23 +523,46 @@ namespace vlights::ambient
 			std::memcpy(g_lastExt, ext, sizeof(ext));
 		}
 
-		// Claim or release the extra slot for `cfg`. Caller holds g_lock.
+		// Claim or release the primary script slot (SET_TIMECYCLE_MODIFIER)
+		// for `cfg`. The extra slot was tried first: the game clears it every
+		// frame (a script has to re-set it each frame), so the plugin was
+		// re-claiming it ten times a second, which showed as a constant
+		// transition sound and no tint. The primary slot persists until a
+		// script clears it. If something still clears it faster than a few
+		// times per ten seconds, the plugin stops fighting and says so.
+		// Caller holds g_lock.
 		void SetSlot(const Config& cfg)
 		{
-			if (!g_mod || g_modIndex < 0)
+			if (!g_mod || g_modIndex < 0 || g_gaveUp)
 				return;
 			ScriptData* s = g_script;
 			const bool on = cfg.match.enabled && cfg.ambientEnabled;
-			const int cur = s->extraIndex;
+			const int cur = s->primaryIndex;
 			if (on)
 			{
 				if (cur == -1 || cur == g_modIndex)
 				{
 					if (cur != g_modIndex)
 					{
-						s->extraIndex = g_modIndex;
 						if (g_weSetSlot)
+						{
 							g_reclaims++;
+							const uint64_t now = GetTickCount64();
+							if (now - g_reclaimWindowStart > 10000)
+							{
+								g_reclaimWindowStart = now;
+								g_reclaimsInWindow = 0;
+							}
+							if (++g_reclaimsInWindow > 5)
+							{
+								g_gaveUp = true;
+								Log("ambient: the primary timecycle slot was cleared %u times in ten seconds; something re-sets it every frame. Giving up on the slot for this session (road glow stays as the game has it)", g_reclaimsInWindow);
+								return;
+							}
+						}
+						s->primaryIndex = g_modIndex;
+						if (!(s->primaryStrength > 0.f))
+							s->primaryStrength = 1.f;
 					}
 					g_weSetSlot = true;
 					g_slotTakenLogged = false;
@@ -524,13 +570,13 @@ namespace vlights::ambient
 				else if (!g_slotTakenLogged)
 				{
 					g_slotTakenLogged = true;
-					Log("ambient: extra timecycle slot is held by modifier #%d (a script's); road glow tint paused until it is cleared", cur);
+					Log("ambient: primary timecycle slot is held by modifier #%d (a script's); road glow tint paused until it is cleared", cur);
 				}
 			}
 			else
 			{
 				if (cur == g_modIndex)
-					s->extraIndex = -1;
+					s->primaryIndex = -1;
 				g_weSetSlot = false;
 			}
 		}
@@ -637,16 +683,16 @@ namespace vlights::ambient
 					if (data[i] == g_mod)
 					{
 						LogDebug("ambient: modifier moved from #%d to #%u", g_modIndex, (unsigned)i);
-						if (g_weSetSlot && g_script->extraIndex == g_modIndex)
-							g_script->extraIndex = i;
+						if (g_weSetSlot && g_script->primaryIndex == g_modIndex)
+							g_script->primaryIndex = i;
 						g_modIndex = i;
 						return;
 					}
 				}
 			}
 			Log("ambient: modifier no longer in the timecycle manager's list; re-registering on the next map block");
-			if (g_weSetSlot && g_script->extraIndex == g_modIndex)
-				g_script->extraIndex = -1;
+			if (g_weSetSlot && g_script->primaryIndex == g_modIndex)
+				g_script->primaryIndex = -1;
 			g_weSetSlot = false;
 			g_mod = nullptr;
 			g_modIndex = -1;
@@ -734,8 +780,8 @@ namespace vlights::ambient
 		}
 		if (!g_mod)
 			return GetConfigPtr()->ambientEnabled ? "road glow tint: registers when the next map block loads" : "road glow tint: off";
-		const int slot = g_script->extraIndex;
-		const char* state = slot == g_modIndex ? "active" : (slot == -1 ? "off" : "paused: a script holds the extra timecycle slot");
+		const int slot = g_script->primaryIndex;
+		const char* state = g_gaveUp ? "given up: the slot is cleared every frame" : slot == g_modIndex ? "active" : (slot == -1 ? "off" : "paused: a script holds the primary timecycle slot");
 		snprintf(buf, sizeof(buf), "road glow tint: modifier #%d, %u vars, colour (%.2f, %.2f, %.2f), %s; slot reclaimed %llu times",
 			g_modIndex, g_mod ? (unsigned)g_mod->modData.count : 0u, g_lastExt[0], g_lastExt[1], g_lastExt[2], state, (unsigned long long)g_reclaims);
 		return buf;

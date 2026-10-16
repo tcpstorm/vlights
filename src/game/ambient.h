@@ -8,8 +8,9 @@
 //
 // Done the way the game's own scripts do it: a timecycle modifier
 // (rage::tcModifier) holding the six colour variables is appended to the
-// timecycle manager's modifier list and put in the "extra" script slot
-// (what SET_EXTRA_TCMODIFIER writes). The modifier is applied by the game
+// timecycle manager's modifier list and put in the primary script slot
+// (what SET_TIMECYCLE_MODIFIER writes; the extra slot is cleared by the
+// game every frame). The modifier is applied by the game
 // every frame on top of the weather keyframes, so the colour follows the
 // target instantly. No detour, no vtable write: data only, written from the
 // main thread inside the map hook (the list) and plain aligned stores
@@ -43,7 +44,7 @@ namespace vlights::ambient
 	void OnMapHook();
 
 	// Any thread: write the colour for `cfg` into the modifier and claim or
-	// release the extra slot according to `cfg`.
+	// release the primary slot according to `cfg`.
 	void Apply(const Config& cfg);
 
 	// Worker thread, every ~100 ms: keep the slot ours if a script cleared

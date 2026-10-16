@@ -21,7 +21,7 @@ Editor" notes on gta5-mods say so explicitly).
 
 The plugin cannot edit the keyframes (no public layout for the cycle data),
 so it does what a script would: it registers a timecycle *modifier* and
-puts it in the game's extra script slot.
+puts it in the game's primary script slot.
 
 ## Where it lives
 
@@ -73,7 +73,9 @@ timecycle's own day/night and weather curve still applies.
    the game's allocator (capacity 12 entries), appended to `modifiers`
    (the list is grown game-style if full: allocate, copy, free the old
    buffer), to `modifierStrengths` if that array is parallel, and inserted
-   in sorted position in the name map. The extra slot is set to its index.
+   in sorted position in the name map. The primary slot is set to its index (the extra slot, tried first, is
+   cleared by the game every frame, which also played a transition sound
+   while the plugin kept re-setting it).
 3. `Apply` (any thread, from `ReapplyAll`): the entries are rewritten for
    the current target (entries first, count last, so the game sees either
    set whole) and the slot is claimed or released. `enabled = 0` or
@@ -93,14 +95,14 @@ saturation at full value times `ambient_brightness`. A white target gives
 
 | Key | Default | |
 | --- | --- | --- |
-| `ambient` | `1` | Register the modifier and hold the extra slot. |
+| `ambient` | `1` | Register the modifier and hold the primary slot. |
 | `ambient_interior` | `0` | Also the six `light_artificial_int_*` colours (tunnels, car parks, shop interiors). |
 | `ambient_brightness` | `1.0` | Scale on the colour, 0 to 4. |
 
 ## If the ground is still orange
 
 1. F9: the `ambient:` line. `active` with a modifier number means the
-   game is applying it. `paused: a script holds the extra timecycle slot`
+   game is applying it. `paused: a script holds the primary timecycle slot`
    is a server script; the plugin will reclaim the slot when it is
    cleared. `unavailable: ...` names the check that failed.
 2. The startup lines: `ambient: timecycle statics: ...` (patterns found),

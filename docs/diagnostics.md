@@ -35,7 +35,7 @@ config (hotkey): ...
   not, the light comes from a source the plugin does not read.
 - `textures: ... 0 with selected textures` after driving past lamps means
   the placement hook did not install; look for the `tex:` lines at start.
-- `ambient:` says whether the road-glow modifier is in the game's extra
+- `ambient:` says whether the road-glow modifier is in the game's primary
   timecycle slot (`active`), cleared (`off`), or displaced by a server
   script (`paused`); `unavailable: ...` names the failed check
   (ambient.md).

@@ -132,7 +132,7 @@ namespace vlights
 		s += "# posts carry a painted 'artificial ambient' weight that the timecycle\n";
 		s += "# lights sodium orange at night (light_artificial_ext_*_col); it is what\n";
 		s += "# stays orange at a distance once every light is recoloured. The plugin\n";
-		s += "# registers a timecycle modifier in the game's extra script slot with the\n";
+		s += "# registers a timecycle modifier in the game's primary script slot with the\n";
 		s += "# target's hue; it follows colour changes instantly and backs off while a\n";
 		s += "# server script holds that slot.\n";
 		s += "ambient = " + std::string(cfg.ambientEnabled ? "1" : "0") + "\n";

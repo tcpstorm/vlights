@@ -98,7 +98,7 @@ src/game/near_lights.*  model lights (store load-complete detour), archetype
                         extensions, store discovery, entity-light helpers
 src/game/textures.*     lantern glow: placement detour, raw resource walk,
                         pixel pass, live GPU rebuild
-src/game/ambient.*      baked road glow: timecycle modifier in the extra
+src/game/ambient.*      baked road glow: timecycle modifier in the primary
                         script slot (data only, no detour)
 src/game/track.*        live-repaint registry: per-store Remove detours + pool liveness
 src/ui/menu.cpp         the menu: own top-level window + D3D11 + ImGui, camera lock
