@@ -38,7 +38,8 @@ namespace vlights
 	void SetConfig(const Config& cfg);         // replace; recomputes derived fields
 	bool ReloadConfigFromDisk(const char* why);
 	bool SaveConfigToDisk(std::string& error);
-	void ReapplyAll();                         // restore originals + recolour everything loaded
+	void ReapplyAll();                         // request: restore originals + recolour everything loaded
+	void RepaintTick();                        // worker thread, every ~100 ms: performs a pending ReapplyAll
 	Stats GetStats();
 	const char* LastFreezeMethod();            // how MinHook froze threads on the last enable
 	bool NearAvailable();                      // model-light hooks installed this session

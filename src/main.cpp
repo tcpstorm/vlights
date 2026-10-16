@@ -62,6 +62,7 @@ namespace
 		for (;;)
 		{
 			Sleep(100);
+			vlights::RepaintTick();
 			vlights::textures::Tick();
 			vlights::ambient::Tick();
 			const vlights::Config cfg = vlights::GetConfig();

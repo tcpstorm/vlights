@@ -8,6 +8,10 @@ namespace vlights
 {
 	struct Config
 	{
+		// Identity of a snapshot, assigned by SetConfig (strictly increasing).
+		// Caches derived from a config key on this, never on the snapshot's
+		// address: a freed snapshot's heap block is reused by the next one.
+		uint64_t generation = 0;
 		MatchParams match;
 		RGB source{ 255.f, 147.f, 41.f }; // sourceHue is derived from this
 		RGB source2{ 255.f, 227.f, 166.f }; // cream freeway lamps; source2Hue is derived from this
