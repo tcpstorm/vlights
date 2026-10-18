@@ -56,6 +56,29 @@ at the first map load (`near: memory checks:` line) and the probe is
 preferred. Startup sweeps must never do per-slot syscalls: 235k pool
 slots x milliseconds looked like a hang at `ambient_SD.ipl`.
 
+## ReShade and the menu window
+
+ReShade (loaded by FiveM from `plugins/dxgi.dll`) detours
+`D3D11CreateDeviceAndSwapChain` for the whole process and binds a full
+effect runtime, with its own numbered ini, to every swap chain it sees.
+With a hardware device for the menu, the menu window took one of those
+runtimes: the primary `ReShade.ini` when the plugin's window was created
+before the game's swap chain, and the game was pushed to a numbered ini.
+ReShade's first-run tutorial and Home-key overlay then opened inside the
+menu. In the sibling plugin VLimiter the same setup crashed one user's
+game on the menu's very first present.
+
+ReShade skips `D3D_DRIVER_TYPE_WARP` and `D3D_DRIVER_TYPE_REFERENCE`
+devices ("Skipping device because the driver type is ...") and then the
+swap chain created on them ("Skipping swap chain because it was created
+without a proxy Direct3D device"). The menu therefore always uses a WARP
+device. Signs it worked: the ReShade log carries both lines, no extra
+`ReShadeN.ini` appears for the menu on a fresh start, and Home no longer
+opens ReShade inside the menu. ReShade's input detours
+(`RegisterRawInputDevices`, `PeekMessage`, `SetCursorPos`, `ClipCursor`)
+still see the menu's calls, unlike FiveM's IAT hooks, but with no runtime
+bound to the window they do nothing with them.
+
 ## MinHook under FiveM
 
 FiveM stubs `CreateToolhelp32Snapshot` (fails with no error code); stock
